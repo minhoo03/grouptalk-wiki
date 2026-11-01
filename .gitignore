@@ -1,0 +1,14 @@
+node_modules
+dist
+.next
+out
+test-results
+playwright-report
+*.tsbuildinfo
+.env*
+!.env.example
+.vercel
+.mcp.json
+.serena
+.omc
+.claude/settings.local.json
