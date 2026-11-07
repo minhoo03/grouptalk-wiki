@@ -1,0 +1,171 @@
+import {
+  EXCERPT_LIMIT,
+  EXCERPT_TEXT_LIMIT,
+  type Excerpt,
+} from "@/services/wikiWriter/wikiWriter.schema";
+import type { ChatMessage } from "@/types/chat";
+import { classify, hasLink, type MsgKind } from "../chatMetrics";
+
+/**
+ * LLM에 보낼 대화 자료를 고른다. 원본 대화를 통째로 보내지 않기 위한 상한(EXCERPT_LIMIT)이 있다.
+ *
+ * 1) 장면: 원본에서 연속된 메시지 묶음. 대화 장면 인용("> 이름: 메시지")이 앞뒤 맥락을 갖도록 한다.
+ *    방의 흐름을 읽을 수 있게 기록 기간을 여러 시기로 나누고, 시기마다 가장 붐빈 날의 대화를 고른다.
+ *    남는 자리는 전체 기간에 고르게 흩어진 지점으로 채운다.
+ * 2) 한 줄 발췌: 장면에 잘 안 나온 구성원도 인물 문서 자료가 있도록 구성원별로 고르게 고른다.
+ *
+ * 개인정보(전화번호, 계좌번호, 이메일, 주민번호)와 링크는 브라우저를 떠나기 전에 가린다.
+ */
+
+const SCENE_COUNT = 24;
+const SCENE_BEFORE = 3;
+const SCENE_AFTER = 5;
+/** 역사 문단의 최대 시기 수(sectionsIntro의 MAX_ERAS)와 맞춘다. */
+const SCENE_PERIODS = 6;
+const BUSY_DAYS_PER_PERIOD = 2;
+/** 장면을 뽑고 남은 자리를 구성원별 한 줄 발췌에 쓰되, 1인당 최소 몫을 둔다. */
+const MIN_PER_AUTHOR = 5;
+/** "ㅋㅋㅋ", "ㅇㅇ"처럼 자음·웃음만 있는 메시지는 한 줄 발췌로 쓸모가 적다. */
+const MIN_MEANINGFUL_CHARS = 4;
+const JAMO_ONLY = /[ㄱ-ㅎㅏ-ㅣ\s.!?~]/g;
+
+const MEDIA_LABEL: Record<Exclude<MsgKind, "text">, string> = {
+  photo: "(사진)",
+  video: "(동영상)",
+  emoticon: "(이모티콘)",
+  deleted: "(삭제된 메시지)",
+  file: "(파일)",
+};
+
+const PRIVATE_PATTERNS = [
+  /[\w.+-]+@[\w-]+(\.[\w-]+)+/g, // 이메일
+  /\d{6}\s?-\s?[1-4]\d{6}/g, // 주민등록번호
+  /01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}/g, // 휴대전화
+  /0\d{1,2}-\d{3,4}-\d{4}/g, // 지역번호 전화
+  /\d{2,6}-\d{2,6}-\d{2,8}(-\d{1,4})?/g, // 계좌번호 형태
+  /\d{10,16}/g, // 하이픈 없는 긴 숫자(계좌·카드)
+];
+const URL_PATTERN = /https?:\/\/\S+/g;
+
+export function maskPrivate(text: string) {
+  return PRIVATE_PATTERNS.reduce(
+    (masked, pattern) => masked.replace(pattern, "***"),
+    text.replace(URL_PATTERN, "(링크)"),
+  );
+}
+
+function toExcerptText(message: ChatMessage) {
+  const kind = classify(message.text);
+  if (kind !== "text") return MEDIA_LABEL[kind];
+  const masked = maskPrivate(message.text.trim());
+  return masked.length > EXCERPT_TEXT_LIMIT
+    ? `${masked.slice(0, EXCERPT_TEXT_LIMIT)}…`
+    : masked;
+}
+
+function isGoodSingleLine(message: ChatMessage) {
+  const text = message.text.trim();
+  return (
+    classify(text) === "text" &&
+    !hasLink(text) &&
+    text.length <= EXCERPT_TEXT_LIMIT &&
+    text.replace(JAMO_ONLY, "").length >= MIN_MEANINGFUL_CHARS
+  );
+}
+
+/** 목록 전체에서 고르게 count개를 뽑는다. */
+function pickEvenly<T>(items: T[], count: number): T[] {
+  if (count <= 0) return [];
+  if (items.length <= count) return items;
+  const step = items.length / count;
+  return Array.from({ length: count }, (_, i) => items[Math.floor(i * step)]);
+}
+
+/**
+ * 활동한 날을 시간순으로 SCENE_PERIODS개 시기로 나누고, 시기마다 메시지가 가장 많은 날의 가운데 메시지 index.
+ * 시기마다 장면이 있어야 역사 서술이 "그때 무슨 이야기를 했는지"를 쓸 수 있다.
+ */
+function busyDayAnchorsByPeriod(messages: ChatMessage[]): number[] {
+  const byDay = new Map<string, number[]>();
+  messages.forEach((message, index) => {
+    if (!message.dateKey) return;
+    const list = byDay.get(message.dateKey) ?? [];
+    list.push(index);
+    byDay.set(message.dateKey, list);
+  });
+  const days = [...byDay.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  const size = Math.ceil(days.length / SCENE_PERIODS);
+  const anchors: number[] = [];
+  for (let start = 0; start < days.length; start += size) {
+    days
+      .slice(start, start + size)
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, BUSY_DAYS_PER_PERIOD)
+      .forEach(([, indexes]) =>
+        anchors.push(indexes[Math.floor(indexes.length / 2)]),
+      );
+  }
+  return anchors;
+}
+
+function pickSceneRanges(messages: ChatMessage[]): [number, number][] {
+  const evenAnchors = pickEvenly(
+    messages.map((_, index) => index),
+    SCENE_COUNT,
+  );
+  const anchors = [...busyDayAnchorsByPeriod(messages), ...evenAnchors];
+
+  const ranges: [number, number][] = [];
+  for (const anchor of anchors) {
+    if (ranges.length >= SCENE_COUNT) break;
+    const start = Math.max(0, anchor - SCENE_BEFORE);
+    const end = Math.min(messages.length, anchor + SCENE_AFTER);
+    const overlaps = ranges.some(([s, e]) => start < e && s < end);
+    if (!overlaps) ranges.push([start, end]);
+  }
+  return ranges.sort((a, b) => a[0] - b[0]);
+}
+
+export function sampleExcerpts(messages: ChatMessage[]): Excerpt[] {
+  const used = new Set<number>();
+  const scenes: Excerpt[] = [];
+
+  pickSceneRanges(messages).forEach(([start, end], scene) => {
+    for (let index = start; index < end; index += 1) {
+      const message = messages[index];
+      used.add(index);
+      scenes.push({
+        author: message.author,
+        date: message.dateKey,
+        text: toExcerptText(message),
+        scene,
+      });
+    }
+  });
+
+  const byAuthor = new Map<string, number[]>();
+  messages.forEach((message, index) => {
+    if (used.has(index) || !isGoodSingleLine(message)) return;
+    const list = byAuthor.get(message.author) ?? [];
+    list.push(index);
+    byAuthor.set(message.author, list);
+  });
+
+  const singlesLimit = Math.max(0, EXCERPT_LIMIT - scenes.length);
+  const perAuthor = Math.max(
+    MIN_PER_AUTHOR,
+    Math.floor(singlesLimit / Math.max(byAuthor.size, 1)),
+  );
+  const singles = [...byAuthor.values()]
+    .flatMap((indexes) => pickEvenly(indexes, perAuthor))
+    .sort((a, b) => a - b)
+    .slice(0, singlesLimit)
+    .map((index) => ({
+      author: messages[index].author,
+      date: messages[index].dateKey,
+      text: toExcerptText(messages[index]),
+      scene: null,
+    }));
+
+  return [...scenes, ...singles].slice(0, EXCERPT_LIMIT);
+}
