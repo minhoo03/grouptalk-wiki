@@ -1,6 +1,10 @@
+import { PageEnter } from "@/components/site/PageEnter";
 import { HomeScreen } from "@/screens/home/HomeScreen";
-import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export default function HomePage() {
-  return <HomeScreen isSupabaseConfigured={isSupabaseConfigured()} />;
+  return (
+    <PageEnter>
+      <HomeScreen />
+    </PageEnter>
+  );
 }

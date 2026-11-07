@@ -1,3 +1,5 @@
+/* 외부 font @import는 다른 @import보다 앞에 있어야 한다. */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -110,12 +112,97 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-* {
-  border-color: var(--border);
-  outline-color: var(--ring);
+/*
+ * 기본값은 base layer에 둔다. layer 밖에 두면 `border-ink` 같은 utility보다 우선해 덮어쓴다.
+ */
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: var(--ring);
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+  }
+
+  /* Tailwind 4는 button cursor를 default로 바꿨다. 원본(Tailwind 3)처럼 pointer로 맞춘다. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/*
+ * 단톡위키 문서 token.
+ * shadcn의 `muted`(배경 의미)와 겹치지 않도록 보조 글자색은 `subtle`로 둔다.
+ */
+@theme {
+  --font-sans: "Pretendard", system-ui, sans-serif;
+
+  /*
+   * Tailwind 4는 text-* 줄 높이를 비율로 둬서 자식의 text-[15px]·md:text-[28px]가 줄 높이를 다르게 물려받는다.
+   * 원본 디자인(Tailwind 3)과 같도록 고정 줄 높이로 되돌린다.
+   */
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+  --color-namu: #00a495;
+  --color-namu-dark: #00786d;
+  --color-ink: #1e2a28;
+  --color-paper: #eef3f1;
+  --color-line: #d7e0dd;
+  --color-subtle: #5b6b68;
+  --color-link: #0275d8;
+  --color-gold: #f2b200;
+  --color-legend: #d9480f;
+  --color-epic: #6741d9;
+  --color-rare: #1971c2;
+  --color-common: #5b6b68;
+}
+
+/* 제목과 라벨에 쓰는 굵은 고딕 */
+@utility font-pixel {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background-color: var(--background);
-  color: var(--foreground);
+  word-break: keep-all;
+}
+
+/* 각주나 참조로 이동했을 때 도착 위치를 잠깐 강조한다. */
+@keyframes fn-flash {
+  0%,
+  40% {
+    background-color: #fff3bf;
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.fn-flash {
+  animation: fn-flash 1.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .fn-flash {
+    animation: none;
+    background-color: #fff3bf;
+  }
 }
