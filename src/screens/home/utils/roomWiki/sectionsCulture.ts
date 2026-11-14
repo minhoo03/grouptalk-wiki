@@ -1,4 +1,10 @@
 import type { Rich, WikiSec } from "@/types/wiki";
+import { inc, rank } from "@/screens/home/utils/collections";
+import type {
+  Insights,
+  MediaKey,
+  Ranked,
+} from "@/screens/home/utils/insights.types";
 import {
   BuildCtx,
   at,
@@ -6,14 +12,68 @@ import {
   day,
   del,
   dur,
+  hours,
   link,
   muted,
+  n,
   p,
   pct,
   section,
+  table,
   ul,
   who,
 } from "@/screens/home/utils/roomWiki/builder";
+
+/** 분위기 지표용 표현. 비율을 가늠하는 용도라 목록이 완전하지 않다. */
+const PROFANITY = /ㅅㅂ|ㅆㅂ|시발|씨발|ㅈㄴ|존나|졸라|ㅂㅅ|병신|개새/;
+const EXCLAMATION = /!|헐|대박|미쳤|와{2,}/;
+const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+/** 월요일부터 보여 준다. */
+const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+/** 링크를 올린 뒤 이 시간 안에 다른 사람이 말하면 반응이 있었던 것으로 본다. */
+const LINK_REACTION_MINUTES = 5;
+const MEDIA_LABELS: Partial<Record<MediaKey, string>> = {
+  photo: "사진",
+  video: "동영상",
+  emoticon: "이모티콘",
+  link: "링크",
+};
+const URL_HOST = /https?:\/\/(?:www\.)?([^/\s?#]+)/i;
+
+/** 같은 사람이 끊기지 않고 이어 보낸 메시지 수의 평균 */
+function averageRun(ins: Insights) {
+  let runs = 0;
+  ins.timed.forEach((m, i) => {
+    if (i === 0 || ins.timed[i - 1].author !== m.author) runs += 1;
+  });
+  return runs ? ins.timed.length / runs : 0;
+}
+
+/** 링크 도메인 순위와, 링크 뒤 LINK_REACTION_MINUTES 안에 다른 사람이 말한 비율 */
+function linkStats(ins: Insights) {
+  const domains = new Map<string, number>();
+  let total = 0;
+  let reacted = 0;
+  ins.timed.forEach((m, i) => {
+    if (!m.link) return;
+    total += 1;
+    const host = URL_HOST.exec(m.text)?.[1]?.toLowerCase();
+    if (host) inc(domains, host);
+    const reply = ins.timed
+      .slice(i + 1, i + 20)
+      .find((next) => next.author !== m.author);
+    if (
+      reply &&
+      m.ts !== null &&
+      reply.ts !== null &&
+      reply.ts - m.ts <= LINK_REACTION_MINUTES * 60_000
+    )
+      reacted += 1;
+  });
+  return { domains: rank(domains), total, reacted };
+}
+
+const share = (count: number, total: number) => `${pct(count, total)}%`;
 
 export function cultureSection(ctx: BuildCtx): WikiSec | null {
   const { ins } = ctx;
@@ -53,16 +113,42 @@ export function cultureSection(ctx: BuildCtx): WikiSec | null {
         if (!ins.total) return null;
         const laughPct = pct(ins.typeTotals.laugh, ins.total);
         const avg = ins.textAvgLength;
+        const texts = ins.timed.filter((m) => m.kind === "text");
+        const profanity = texts.filter((m) => PROFANITY.test(m.text)).length;
+        const exclamation = texts.filter((m) => EXCLAMATION.test(m.text)).length;
+        const laughers = [...ctx.room.participants]
+          .filter((person) => person.messageCount >= 20)
+          .sort(
+            (a, c) =>
+              c.laughCount / c.messageCount - a.laughCount / a.messageCount,
+          )
+          .slice(0, 3);
+        const items: Rich[] = [
+          [`비속어가 섞인 메시지 ${share(profanity, texts.length)}, 감탄사·느낌표가 섞인 메시지 ${share(exclamation, texts.length)}.`],
+          [`한 사람이 끊기지 않고 이어 보내는 메시지는 평균 ${averageRun(ins).toFixed(1)}개.`],
+        ];
+        if (ins.replyMedianAll !== null)
+          items.push([`다른 사람의 말에 답하기까지 걸리는 시간의 중앙값은 ${dur(ins.replyMedianAll)}.`]);
+        if (laughers.length)
+          items.push([
+            "웃음 비율이 높은 멤버: ",
+            ...laughers.flatMap((person, i): Rich => [
+              i > 0 ? ", " : "",
+              link(person.name),
+              ` ${share(person.laughCount, person.messageCount)}`,
+            ]),
+          ]);
         return [
           p(
             `전체 메시지의 ${laughPct}%에 웃음이 섞여 있어 ${laughPct >= 20 ? "전반적으로 가볍고 유쾌한" : "비교적 차분한"} 분위기다. 텍스트 메시지의 평균 길이는 ${avg.toFixed(1)}자로, ${avg < 12 ? "짧게 치고 빠지는 대화가 대부분이다" : "한 번에 길게 말하는 편이다"}. 물음표가 들어간 메시지는 ${pct(ins.typeTotals.question, ins.total)}%.`,
           ),
+          ul(items),
         ];
       },
     },
     {
       key: "rules",
-      title: "암묵적인 규칙",
+      title: "암묵적인 규칙 및 관행",
       build: () => {
         const items: Rich[] = [];
         const quiet = longestZeroRun(ins.hours);
@@ -91,30 +177,96 @@ export function cultureSection(ctx: BuildCtx): WikiSec | null {
       },
     },
     {
-      key: "nightMorning",
-      title: "새벽반과 아침반",
+      key: "media",
+      title: "사진·이모티콘 및 링크 공유 문화",
       build: () => {
+        const kinds = (Object.keys(MEDIA_LABELS) as MediaKey[]).filter(
+          (kind) => ins.mediaTotal[kind] > 0,
+        );
+        if (!kinds.length && !ins.emojiTop.length) return null;
+        const items: Rich[] = kinds.map((kind) => {
+          const leader: Ranked | undefined = ins.media[kind][0];
+          return [
+            b(MEDIA_LABELS[kind] ?? kind),
+            ` ${n(ins.mediaTotal[kind])}개 (전체의 ${share(ins.mediaTotal[kind], ins.total)})`,
+            ...(leader
+              ? [" - 가장 많이 올린 사람 ", link(leader.name), ` ${n(leader.value)}개`]
+              : []),
+          ];
+        });
+        if (ins.emojiTop.length)
+          items.push([
+            b("이모지 상위"),
+            ` ${ins.emojiTop
+              .slice(0, 10)
+              .map((e) => `${e.word}(${n(e.count)})`)
+              .join(" ")}`,
+          ]);
+        const links = linkStats(ins);
+        if (links.total) {
+          if (links.domains.length)
+            items.push([
+              b("링크 출처"),
+              ` ${links.domains
+                .slice(0, 5)
+                .map((d) => `${d.name}(${n(d.value)})`)
+                .join(", ")}`,
+            ]);
+          items.push([
+            b("링크 반응"),
+            ` 링크를 올린 뒤 ${LINK_REACTION_MINUTES}분 안에 다른 사람이 답한 비율 ${share(links.reacted, links.total)}`,
+          ]);
+        }
+        return [ul(items)];
+      },
+    },
+    {
+      key: "rhythm",
+      title: "활동 리듬 및 주력 시간대",
+      build: () => {
+        if (!ins.total) return null;
+        const weekdayRows = WEEKDAY_ORDER.filter(
+          (w) => ins.weekdayDays[w] > 0,
+        ).map((w): Rich[] => [
+          [`${WEEKDAY_LABELS[w]}요일`],
+          [(ins.weekday[w] / ins.weekdayDays[w]).toFixed(1)],
+        ]);
+        const bandItems = ins.bands
+          .filter((band) => band.count > 0)
+          .map((band): Rich => [
+            b(band.label),
+            muted(` (${band.range})`),
+            ` ${share(band.count, ins.total)}`,
+            ...(band.top ? [" - 주도 ", link(band.top)] : []),
+          ]);
         const nt = ins.nightRank[0];
         const mn = ins.morningRank[0];
-        if (!nt && !mn) return null;
-        const items: Rich[] = [];
         if (nt)
-          items.push([
-            b("새벽반"),
+          bandItems.push([
+            b("새벽 반장"),
             muted(" (23시~5시)"),
-            " - 반장 ",
+            " ",
             link(nt.name),
-            ` (${nt.value}개)`,
+            ` ${n(nt.value)}개`,
           ]);
         if (mn)
-          items.push([
-            b("아침반"),
+          bandItems.push([
+            b("아침 반장"),
             muted(" (5시~9시)"),
-            " - 반장 ",
+            " ",
             link(mn.name),
-            ` (${mn.value}개)`,
+            ` ${n(mn.value)}개`,
           ]);
-        return [ul(items)];
+        return [
+          p(
+            `평일 일평균 메시지는 ${ins.weekdayAvg.toFixed(1)}개, 주말은 ${ins.weekendAvg.toFixed(1)}개다.`,
+          ),
+          ...(weekdayRows.length >= 2
+            ? [table(["요일", "일평균 메시지"], weekdayRows)]
+            : []),
+          hours(ins.hours, "시간대별 메시지 수"),
+          ...(bandItems.length ? [ul(bandItems)] : []),
+        ];
       },
     },
   ]);

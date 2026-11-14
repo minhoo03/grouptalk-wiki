@@ -146,6 +146,7 @@ export function* computeInsightsSteps(
   const dayWeekday = new Map<string, number>();
   let wdDays = 0;
   let weDays = 0;
+  const weekdayDays = [0, 0, 0, 0, 0, 0, 0];
   if (startKey) {
     for (let d = 0; d < spanDays; d++) {
       const k = addDays(startKey, d);
@@ -169,6 +170,7 @@ export function* computeInsightsSteps(
       buckets[bi].days++;
       const w = keyToDate(k).getDay();
       dayWeekday.set(k, w);
+      weekdayDays[w]++;
       if (w === 0 || w === 6) weDays++;
       else wdDays++;
     }
@@ -734,6 +736,7 @@ export function* computeInsightsSteps(
     recent,
     months,
     weekday,
+    weekdayDays,
     weekdayAvg: wdDays
       ? weekday.slice(1, 6).reduce((a, b) => a + b, 0) / wdDays
       : 0,

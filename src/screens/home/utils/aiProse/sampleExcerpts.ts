@@ -19,7 +19,8 @@ import {
  *    방의 흐름을 읽을 수 있게 기록 기간을 여러 시기로 나누고, 시기마다 가장 붐빈 날의 대화를 고른다.
  *    남는 자리는 전체 기간에 고르게 흩어진 지점으로 채운다.
  * 2) 방 이름 발췌: 방 이름이나 "우리 방"처럼 방을 가리키는 표현이 나온 메시지. 명칭 섹션의 근거다.
- * 3) 한 줄 발췌: 장면에 잘 안 나온 구성원도 인물 문서 자료가 있도록 구성원별로 고르게 고른다.
+ * 3) 관행 단서 발췌: 사과·지적·생일·정산·도착 인증·인사처럼 반복되는 관행의 단서가 될 만한 메시지.
+ * 4) 한 줄 발췌: 장면에 잘 안 나온 구성원도 인물 문서 자료가 있도록 구성원별로 고르게 고른다.
  *
  * 개인정보(전화번호, 계좌번호, 이메일, 주민번호)와 링크는 브라우저를 떠나기 전에 가린다.
  */
@@ -32,6 +33,10 @@ const OPENING_PART_LINES = 15;
 const CLOSING_LINES = 5;
 const SCENE_COUNT = 24;
 const NAMING_LINES = 20;
+const CUSTOM_LINES = 24;
+/** 관행·규칙의 단서가 될 만한 표현. 후보일 뿐이고, 실제 관행인지는 AI가 날짜와 반응을 보고 판단한다. */
+const CUSTOM_CUE =
+  /읽씹|안\s?읽|미안|ㅈㅅ|죄송|선\s?넘|생일|생축|정산|입금|송금|n빵|엔빵|도착|출발|출근|퇴근|잘\s?자|굿밤|좋은\s?아침|ㄱㅁ|고마워/;
 const SCENE_BEFORE = 3;
 const SCENE_AFTER = 5;
 /** 역사 문단의 최대 시기 수(sectionsIntro의 MAX_ERAS)와 맞춘다. */
@@ -206,6 +211,18 @@ function namingIndexes(
   return pickEvenly(indexes, NAMING_LINES);
 }
 
+/** 관행 단서 표현이 나온 메시지. 기록 전체에서 고르게 고른다. */
+function customIndexes(messages: ChatMessage[], used: Set<number>): number[] {
+  const indexes = messages.flatMap((message, index) =>
+    !used.has(index) &&
+    classify(message.text) === "text" &&
+    CUSTOM_CUE.test(message.text)
+      ? [index]
+      : [],
+  );
+  return pickEvenly(indexes, CUSTOM_LINES);
+}
+
 export function sampleExcerpts(
   messages: ChatMessage[],
   roomTitle: string,
@@ -240,6 +257,17 @@ export function sampleExcerpts(
     },
   );
 
+  const custom: Excerpt[] = customIndexes(messages, used).map((index) => {
+    used.add(index);
+    return {
+      author: messages[index].author,
+      date: messages[index].dateKey,
+      text: toExcerptText(messages[index]),
+      scene: null,
+      tag: "custom",
+    };
+  });
+
   const byAuthor = new Map<string, number[]>();
   messages.forEach((message, index) => {
     if (used.has(index) || !isGoodSingleLine(message)) return;
@@ -250,7 +278,7 @@ export function sampleExcerpts(
 
   const singlesLimit = Math.max(
     0,
-    EXCERPT_LIMIT - scenes.length - naming.length,
+    EXCERPT_LIMIT - scenes.length - naming.length - custom.length,
   );
   const perAuthor = Math.max(
     MIN_PER_AUTHOR,
@@ -267,5 +295,8 @@ export function sampleExcerpts(
       scene: null,
     }));
 
-  return [...scenes, ...naming, ...singles].slice(0, EXCERPT_LIMIT);
+  return [...scenes, ...naming, ...custom, ...singles].slice(
+    0,
+    EXCERPT_LIMIT,
+  );
 }

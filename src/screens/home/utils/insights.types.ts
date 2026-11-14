@@ -140,7 +140,10 @@ export interface Insights {
   /** "현재": 마지막 기록일 기준 최근 30일(기록 기간이 더 짧으면 전체) */
   recent: RecentWindow | null;
   months: MonthCount[];
+  /** 요일별 메시지 수. index 0이 일요일 */
   weekday: number[];
+  /** 기록 기간 안의 요일별 달력 일수. weekday[i] / weekdayDays[i]가 그 요일의 일평균이다. */
+  weekdayDays: number[];
   weekdayAvg: number;
   weekendAvg: number;
   weekdayTop: string | null;

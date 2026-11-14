@@ -22,7 +22,7 @@ export type PersonSectionKey = (typeof PERSON_SECTION_KEYS)[number];
  * AI가 항목(소제목)을 직접 정하는 단톡방 섹션. 규칙 기반 하위 문단은 사실 묶음 하나로 합쳐 보내고,
  * AI가 돌려준 항목으로 섹션의 하위 문단 전체를 바꾼다.
  */
-export const ITEM_SECTION_KEYS = ["episodes", "controversy"] as const;
+export const ITEM_SECTION_KEYS = ["culture", "episodes", "controversy"] as const;
 /** 구성원마다 하위 문단 하나. AI는 제목과 본문을 쓴다. */
 export const HALL_OF_FAME_KEY = "hallOfFame";
 
@@ -54,8 +54,12 @@ export const excerptSchema = z.object({
   /**
    * opening·closing: 대화 파일의 첫 티키타카와 마지막 대화 장면.
    * naming: 방 이름이나 방을 가리키는 표현이 나온 한 줄 발췌(명칭 섹션의 근거).
+   * custom: 사과·지적·생일·정산·도착 인증처럼 관행·규칙의 단서가 되는 한 줄 발췌(방의 성격과 문화 섹션의 근거).
    */
-  tag: z.enum(["opening", "closing", "naming"]).nullable().optional(),
+  tag: z
+    .enum(["opening", "closing", "naming", "custom"])
+    .nullable()
+    .optional(),
 });
 
 export const memberSummarySchema = z.object({
