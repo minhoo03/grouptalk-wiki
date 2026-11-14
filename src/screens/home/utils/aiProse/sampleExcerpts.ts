@@ -5,7 +5,11 @@ import {
 } from "@/services/wikiWriter/wikiWriter.schema";
 import type { ChatMessage } from "@/types/chat";
 import {
+  CORRECTION_CUE,
+  MISUNDERSTAND_CUE,
+  RUMOR_CUE,
   classify,
+  daysBetween,
   hasLink,
   roomReference,
   type MsgKind,
@@ -15,6 +19,8 @@ import {
  * LLM에 보낼 대화 자료를 고른다. 원본 대화를 통째로 보내지 않기 위한 상한(EXCERPT_LIMIT)이 있다.
  *
  * 0) 첫 기록·마지막 기록: 역사 섹션이 원문 그대로 인용하는 대화 파일의 처음과 끝 장면.
+ *    사건 후보: 해명·소문·정정 표현이나 긴 침묵 뒤 첫 대화의 앞뒤. 한 줄만으로는 무슨 일인지 알 수 없어
+ *    에피소드·논란 섹션이 흐름을 따라갈 수 있게 장면으로 보낸다.
  * 1) 장면: 원본에서 연속된 메시지 묶음. 대화 장면 인용("> 이름: 메시지")이 앞뒤 맥락을 갖도록 한다.
  *    방의 흐름을 읽을 수 있게 기록 기간을 여러 시기로 나누고, 시기마다 가장 붐빈 날의 대화를 고른다.
  *    남는 자리는 전체 기간에 고르게 흩어진 지점으로 채운다.
@@ -31,6 +37,14 @@ const OPENING_GAP_MINUTES = 30;
 const OPENING_MAX_LINES = 30;
 const OPENING_PART_LINES = 15;
 const CLOSING_LINES = 5;
+const EVENT_SCENES = 10;
+const EVENT_BEFORE = 6;
+const EVENT_AFTER = 9;
+/** 이 일수 이상 대화가 끊겼다가 다시 시작된 대화를 사건 후보로 본다. */
+const EVENT_SILENCE_DAYS = 7;
+const EVENT_CUE = new RegExp(
+  [MISUNDERSTAND_CUE, RUMOR_CUE, CORRECTION_CUE].map((r) => r.source).join("|"),
+);
 const SCENE_COUNT = 24;
 const NAMING_LINES = 20;
 const CUSTOM_LINES = 24;
@@ -175,9 +189,44 @@ function closingRange(
     : [];
 }
 
+/** 해명·소문·정정 표현과 긴 침묵 뒤 첫 메시지의 index. 기록 전체에서 고르게 고른다. */
+function eventAnchors(messages: ChatMessage[]): number[] {
+  const anchors: number[] = [];
+  let lastDateKey: string | null = null;
+  messages.forEach((message, index) => {
+    const isText = classify(message.text) === "text";
+    if (isText && EVENT_CUE.test(message.text)) anchors.push(index);
+    if (
+      message.dateKey &&
+      lastDateKey &&
+      daysBetween(lastDateKey, message.dateKey) >= EVENT_SILENCE_DAYS
+    )
+      anchors.push(index);
+    if (message.dateKey) lastDateKey = message.dateKey;
+  });
+  return pickEvenly(anchors, EVENT_SCENES * 2);
+}
+
+/** 사건 후보 앞뒤 장면. 겹치는 후보는 하나로 본다. */
+function eventRanges(
+  messages: ChatMessage[],
+  reserved: SceneRange[],
+): SceneRange[] {
+  const ranges: SceneRange[] = [];
+  for (const anchor of eventAnchors(messages)) {
+    if (ranges.length >= EVENT_SCENES) break;
+    const start = Math.max(0, anchor - EVENT_BEFORE);
+    const end = Math.min(messages.length, anchor + EVENT_AFTER + 1);
+    if (!overlaps(ranges, start, end) && !overlaps(reserved, start, end))
+      ranges.push({ start, end, tag: "event" });
+  }
+  return ranges;
+}
+
 function pickSceneRanges(messages: ChatMessage[]): SceneRange[] {
   const opening = openingRanges(messages);
-  const reserved = [...opening, ...closingRange(messages, opening)];
+  const edges = [...opening, ...closingRange(messages, opening)];
+  const reserved = [...edges, ...eventRanges(messages, edges)];
 
   const evenAnchors = pickEvenly(
     messages.map((_, index) => index),

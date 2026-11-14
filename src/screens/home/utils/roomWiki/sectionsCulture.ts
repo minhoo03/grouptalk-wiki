@@ -1,4 +1,5 @@
 import type { Rich, WikiSec } from "@/types/wiki";
+import { isTopicWord } from "@/screens/home/utils/chatMetrics";
 import { inc, rank } from "@/screens/home/utils/collections";
 import type {
   Insights,
@@ -82,17 +83,19 @@ export function cultureSection(ctx: BuildCtx): WikiSec | null {
       key: "topics",
       title: "주요 대화 주제",
       build: () => {
-        if (!ins.words.length) return null;
+        // 활용형·일반어를 거른 낱말만 보여 준다. 실제 화제는 AI가 대화 장면에서 묶는다.
+        const words = ins.words.filter((w) => isTopicWord(w.word));
+        if (!words.length) return null;
         return [
           p(
-            "자주 나온 단어로 미루어 보아 주요 화제는 다음과 같다.",
+            "자주 나온 낱말로 본 화제 후보는 다음과 같다.",
             ctx.fn("단어 빈도로 추정한 것이며 실제 화제와 다를 수 있다.", {
               sec: "method",
               sub: "words",
             }),
           ),
           ul(
-            ins.words.slice(0, 8).map((w): Rich => {
+            words.slice(0, 8).map((w): Rich => {
               const leader = ins.topicLeaders.find(
                 (t) => t.word === w.word && t.name,
               );

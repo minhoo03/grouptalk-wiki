@@ -30,7 +30,8 @@ export function isItemSection(key: string) {
   return (ITEM_SECTION_KEYS as readonly string[]).includes(key);
 }
 
-export const EXCERPT_LIMIT = 300;
+/** 사건 후보·첫 기록·마지막 기록 장면까지 담는다. 줄 수가 늘어도 요청 수는 같다. */
+export const EXCERPT_LIMIT = 500;
 /**
  * 묶음(Gemini 호출 1회) 나누기. 무료 등급의 실제 제약은 하루 요청 수(모델별 20회)라
  * 응답이 길어지더라도 요청 수를 줄인다. 관련 섹션을 한 요청에서 쓰면 섹션끼리 내용이 덜 겹친다.
@@ -64,9 +65,10 @@ export const excerptSchema = z.object({
    * opening·closing: 대화 파일의 첫 티키타카와 마지막 대화 장면.
    * naming: 방 이름이나 방을 가리키는 표현이 나온 한 줄 발췌(명칭 섹션의 근거).
    * custom: 사과·지적·생일·정산·도착 인증처럼 관행·규칙의 단서가 되는 한 줄 발췌(방의 성격과 문화 섹션의 근거).
+   * event: 해명·소문·정정·긴 침묵 뒤 대화처럼 앞뒤를 봐야 이해되는 사건 후보 장면(에피소드·논란 섹션의 근거).
    */
   tag: z
-    .enum(["opening", "closing", "naming", "custom"])
+    .enum(["opening", "closing", "naming", "custom", "event"])
     .nullable()
     .optional(),
 });

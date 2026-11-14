@@ -40,6 +40,7 @@ const SCENE_TAG_LABEL: Record<NonNullable<Excerpt["tag"]>, string> = {
   closing: "마지막 기록",
   naming: "방 이름",
   custom: "관행 단서",
+  event: "사건 후보",
 };
 
 /** 연속된 대화 장면. "> 이름: 메시지" 인용은 여기서만 그대로 옮겨 쓸 수 있다. */
