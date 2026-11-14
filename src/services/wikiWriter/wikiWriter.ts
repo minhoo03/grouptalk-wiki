@@ -27,7 +27,7 @@ import {
 /**
  * 섹션별 Markdown 지시문과 분석 자료를 조립해 Gemini에 서술 문단을 요청한다. 서버 전용.
  *
- * 호출 단위: 브라우저가 문서를 작은 묶음(ROOM_SUBS_PER_JOB, PEOPLE_PER_JOB)으로 나눠
+ * 호출 단위: 브라우저가 문서를 묶음(ROOM_JOB_GROUPS, PEOPLE_PER_JOB)으로 나눠
  * 묶음마다 한 번씩 요청한다. 여기서는 묶음 하나 = Gemini 호출 1회다.
  * 실패한 묶음은 null을 돌려주고, 그 부분은 화면에서 규칙 기반 문장이 남는다.
  */

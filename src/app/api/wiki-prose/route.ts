@@ -9,8 +9,8 @@ import { writeProseJob } from "@/services/wikiWriter/wikiWriter";
  * 공개 endpoint이므로 입력을 다시 검증한다.
  */
 
-/** gemini.ts의 CALL_DEADLINE_MS(150초)보다 길게 둔다. */
-export const maxDuration = 180;
+/** gemini.ts의 CALL_DEADLINE_MS(170초)보다 길게 둔다. */
+export const maxDuration = 200;
 
 export async function POST(request: Request) {
   const body: unknown = await request.json().catch(() => null);

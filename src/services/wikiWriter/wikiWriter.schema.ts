@@ -32,11 +32,20 @@ export function isItemSection(key: string) {
 
 export const EXCERPT_LIMIT = 300;
 /**
- * 묶음 하나(Gemini 호출 1회)에 넣는 양. 한 응답이 길면 생성에만 2분 넘게 걸려 시간 초과로 끝나므로,
- * 응답 하나가 30~60초 안에 끝나는 크기로 나눈다.
+ * 묶음(Gemini 호출 1회) 나누기. 무료 등급의 실제 제약은 하루 요청 수(모델별 20회)라
+ * 응답이 길어지더라도 요청 수를 줄인다. 관련 섹션을 한 요청에서 쓰면 섹션끼리 내용이 덜 겹친다.
+ * 단톡방은 아래 섹션 묶음마다 한 번, 인물은 PEOPLE_PER_JOB명씩 한 번 요청한다.
  */
-export const ROOM_SUBS_PER_JOB = 6;
-export const PEOPLE_PER_JOB = 4;
+export const ROOM_JOB_GROUPS: readonly (readonly string[])[] = [
+  ["overview", "naming", "history"],
+  ["members", "culture", "slang", "episodes", "controversy"],
+  ["hallOfFame", "trivia"],
+];
+/** 명예의 전당은 구성원 수만큼 하위 문단이 생기므로 이 인원씩 끊는다. */
+export const HALL_OF_FAME_PER_JOB = 20;
+/** 서버가 받는 묶음 하나의 하위 문단 상한. 보통의 방은 묶음당 10~20개다. */
+export const ROOM_SUBS_MAX_PER_JOB = 30;
+export const PEOPLE_PER_JOB = 8;
 export const EXCERPT_TEXT_LIMIT = 160;
 const FACTS_LIMIT = 6000;
 const NAME_LIMIT = 100;
@@ -119,8 +128,8 @@ export const proseJobSchema = z.discriminatedUnion("kind", [
     request: roomProseRequestSchema.refine(
       (request) =>
         request.sections.reduce((sum, s) => sum + s.subs.length, 0) <=
-        ROOM_SUBS_PER_JOB,
-      `하위 문단은 묶음당 ${ROOM_SUBS_PER_JOB}개 이하여야 합니다.`,
+        ROOM_SUBS_MAX_PER_JOB,
+      `하위 문단은 묶음당 ${ROOM_SUBS_MAX_PER_JOB}개 이하여야 합니다.`,
     ),
   }),
   z.object({

@@ -29,10 +29,10 @@ export type AiProseProgressHandler = (done: number, total: number) => void;
 
 const PROSE_ENDPOINT = "/api/wiki-prose";
 /**
- * 동시에 보내는 묶음 수. 묶음은 두 모델에 번갈아 배정되므로 모델마다 2개씩 동시에 돈다.
- * 묶음 하나가 30~60초 걸리면 모델별 분당 요청이 4회 안쪽이라 무료 등급 한도(분당 5회)를 넘지 않는다.
+ * 동시에 보내는 묶음 수. 보통의 방은 묶음이 5개(단톡방 3 + 인물 2)라 한 번에 모두 보낸다.
+ * 묶음은 두 모델에 번갈아 배정되므로 모델마다 최대 3개씩 동시에 돌아, 무료 등급 분당 한도(5회) 안이다.
  */
-const CONCURRENCY = 4;
+const CONCURRENCY = 6;
 
 /** 묶음 하나를 요청한다. 실패하면 null이고, 그 부분은 규칙 기반 문장이 남는다. */
 async function requestJob(
