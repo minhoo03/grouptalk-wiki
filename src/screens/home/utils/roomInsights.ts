@@ -13,7 +13,7 @@ import type {
   TypeKey,
   TypeRank,
   Bucket,
-} from "./insights.types";
+} from "@/screens/home/utils/insights.types";
 import {
   BoundedCounter,
   addDays,
@@ -29,9 +29,9 @@ import {
   longestLaugh,
   toTs,
   tokenize,
-} from "./chatMetrics";
-import { inc, median, rank, top } from "./collections";
-import { Steps, YIELD_MASK, runSync } from "./slicing";
+} from "@/screens/home/utils/chatMetrics";
+import { inc, median, rank, top } from "@/screens/home/utils/collections";
+import { Steps, YIELD_MASK, runSync } from "@/screens/home/utils/slicing";
 
 export type {
   Bucket,
@@ -47,7 +47,7 @@ export type {
   TimedMessage,
   TypeKey,
   TypeRank,
-} from "./insights.types";
+} from "@/screens/home/utils/insights.types";
 
 export const SESSION_GAP = 60;
 const PHRASE_LIMIT = 100000;
@@ -58,6 +58,7 @@ const SLANG_MIN_USERS = 2;
 const VANISHED_MIN_SPAN_DAYS = 30;
 /** "현재"로 보는 기간: 마지막 기록일 기준 최근 30일 */
 const RECENT_DAYS = 30;
+const RECENT_TOP_WORDS = 5;
 const MISUNDERSTAND =
   /오해|그게 아니라|그런 뜻(이)? 아니|농담이(야|었)|장난이(야|었)/;
 const RUMOR = /카더라|소문|썰 (들었|풀)|들었는데/;
@@ -249,7 +250,7 @@ export function* computeInsightsSteps(
   }));
   let repeatRun: Insights["repeatRun"] = null;
   let run = 1;
-  const renames: string[] = [];
+  const renames: Insights["renames"] = [];
   const misunderstandings: TimedMessage[] = [];
   const rumors: TimedMessage[] = [];
   const corrections: TimedMessage[] = [];
@@ -415,7 +416,7 @@ export function* computeInsightsSteps(
         corrections.push(m);
     }
     const rn = m.text.match(RENAME);
-    if (rn) renames.push(rn[1]);
+    if (rn) renames.push({ name: rn[1], dateKey: m.dateKey, author: m.author });
 
     if ((i & YIELD_MASK) === 0) yield progress(1, i);
   }
@@ -682,10 +683,23 @@ export function* computeInsightsSteps(
     const fromKey = addDays(endKey, -(windowDays - 1));
     const recentAuthors = new Map<string, number>();
     let recentCount = 0;
+    // 직전 같은 길이 구간. 기록이 두 구간을 다 채울 만큼 길 때만 비교한다.
+    const prevFromKey = addDays(fromKey, -windowDays);
+    const hasPrev = spanDays >= windowDays * 2;
+    let prevCount = 0;
     for (const d of days) {
-      if (d.key < fromKey) continue;
+      if (d.key < fromKey) {
+        if (d.key >= prevFromKey) prevCount += d.count;
+        continue;
+      }
       recentCount += d.count;
       d.authors.forEach((c, name) => inc(recentAuthors, name, c));
+    }
+    const recentWords = new Map<string, number>();
+    for (const m of timed) {
+      if (!m.dateKey || m.dateKey < fromKey) continue;
+      for (const w of tokenize(m.text))
+        if (wordTotals.has(w)) inc(recentWords, w);
     }
     recent = {
       fromKey,
@@ -695,6 +709,10 @@ export function* computeInsightsSteps(
       members: recentAuthors.size,
       perDay: recentCount / windowDays,
       top: top(recentAuthors),
+      prevCount: hasPrev ? prevCount : null,
+      topWords: rank(recentWords)
+        .slice(0, RECENT_TOP_WORDS)
+        .map((r) => r.name),
     };
   }
 

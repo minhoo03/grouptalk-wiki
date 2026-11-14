@@ -1,5 +1,5 @@
 import type { ChatMessage } from "@/types/chat";
-import type { MsgKind } from "./insights.types";
+import type { MsgKind } from "@/screens/home/utils/insights.types";
 
 export type { MsgKind };
 
@@ -25,6 +25,18 @@ export function classify(raw: string): MsgKind {
   if (DELETED.test(text)) return "deleted";
   if (FILE.test(text)) return "file";
   return "text";
+}
+
+/**
+ * 이 단톡방이나 멤버 집단 전체를 가리키는 표현. 별칭·줄임말 후보를 찾는 데 쓴다.
+ * "이방인"처럼 단어 일부가 걸릴 수 있어 후보로만 쓰고, 별칭인지는 AI가 맥락으로 판단한다.
+ */
+const ROOM_REFERENCE = /(우리|이)\s?(단톡방|단톡|톡방|방|모임)|단톡방|톡방/;
+
+/** 방을 가리키는 표현이 있으면 공백을 하나로 맞춰 돌려준다. */
+export function roomReference(text: string): string | null {
+  const match = ROOM_REFERENCE.exec(text);
+  return match ? match[0].replace(/\s+/g, " ") : null;
 }
 
 export function hasLink(text: string): boolean {

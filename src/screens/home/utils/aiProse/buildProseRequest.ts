@@ -1,8 +1,9 @@
-import type {
-  Excerpt,
-  PersonProseRequest,
-  PersonSectionKey,
-  WikiProseRequest,
+import {
+  isItemSection,
+  type Excerpt,
+  type PersonProseRequest,
+  type PersonSectionKey,
+  type WikiProseRequest,
 } from "@/services/wikiWriter/wikiWriter.schema";
 import type { PersonProfile, RoomProfile } from "@/types/chat";
 import type { Block, Rich, RoomWiki } from "@/types/wiki";
@@ -17,6 +18,17 @@ const FACTS_LIMIT = 6000;
 /** 숫자·목록 위주라 서술 자료로 의미가 없고 분량만 큰 섹션 */
 const ROOM_SECTIONS_WITHOUT_PROSE = new Set(["method", "related"]);
 const LONGEST_MESSAGE_LIMIT = 300;
+/**
+ * AI가 문단으로 바꾸면 안 되는 하위 문단(표를 그대로 둔다). 내용은 같은 섹션 첫 하위 문단의 사실로 넘긴다.
+ * 개요 > 기본 정보: AI는 표의 일부 칸만 overviewInfo로 채운다.
+ * 역사 > 주요 사건 연표: AI는 표의 행을 timeline으로 채운다.
+ * 명칭 > 역대 방 이름: 시스템 메시지로 확인한 변경 이력이라 목록을 그대로 둔다.
+ */
+const FACTS_ONLY_SUBS = new Set([
+  "overview/info",
+  "history/timeline",
+  "naming/renames",
+]);
 
 function clip(text: string, limit = FACTS_LIMIT) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
@@ -163,17 +175,49 @@ export function buildProseRequest(
 
   const sections = wiki.sections
     .filter((section) => !ROOM_SECTIONS_WITHOUT_PROSE.has(section.key))
-    .map((section) => ({
-      key: section.key,
-      title: section.title,
-      subs: section.subs.map((sub) => ({
-        key: sub.key,
-        title: sub.title,
-        facts: clip(
-          sub.blocks.map((block) => blockToText(block, wiki.notes)).join("\n"),
-        ),
-      })),
-    }));
+    .map((section) => {
+      const subText = (sub: (typeof section.subs)[number]) =>
+        sub.blocks.map((block) => blockToText(block, wiki.notes)).join("\n");
+      const isFactsOnly = (sub: (typeof section.subs)[number]) =>
+        FACTS_ONLY_SUBS.has(`${section.key}/${sub.key}`);
+      const extraFacts = section.subs
+        .filter(isFactsOnly)
+        .map((sub) => `[${sub.title}]\n${subText(sub)}`)
+        .join("\n\n");
+      // 항목 섹션: AI가 항목을 새로 정하므로 규칙 기반 하위 문단을 사실 묶음 하나로 합친다.
+      // 한 섹션이 여러 요청으로 나뉘어 같은 사건이 두 번 쓰이는 일도 막는다.
+      if (isItemSection(section.key))
+        return {
+          key: section.key,
+          title: section.title,
+          subs: [
+            {
+              key: "facts",
+              title: section.title,
+              facts: clip(
+                section.subs
+                  .map((sub) => `[${sub.title}]\n${subText(sub)}`)
+                  .join("\n\n"),
+              ),
+            },
+          ],
+        };
+      return {
+        key: section.key,
+        title: section.title,
+        subs: section.subs
+          .filter((sub) => !isFactsOnly(sub))
+          .map((sub, index) => ({
+            key: sub.key,
+            title: sub.title,
+            facts: clip(
+              index === 0 && extraFacts
+                ? `${subText(sub)}\n\n${extraFacts}`
+                : subText(sub),
+            ),
+          })),
+      };
+    });
 
   const people: PersonProseRequest["people"] = room.participants.map(
     (person) => {

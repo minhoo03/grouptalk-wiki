@@ -27,7 +27,7 @@ import type { Block, PersonProseEntry } from "@/types/wiki";
 import { formatDateKey, formatHour, formatTime } from "@/utils/format";
 import { hasBatchim, josa } from "@/utils/korean";
 import { HOME_PATH, ROOM_PATH, personPath } from "@/utils/wikiRoutes";
-import { rarityMeta } from "./rarity";
+import { rarityMeta } from "@/screens/person/rarity";
 
 type PersonScreenProps = {
   name: string;

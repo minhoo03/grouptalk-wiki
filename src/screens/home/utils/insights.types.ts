@@ -55,6 +55,10 @@ export interface RecentWindow {
   members: number;
   perDay: number;
   top: string | null;
+  /** 바로 앞 같은 길이 구간의 메시지 수. 기록이 그만큼 길지 않으면 null */
+  prevCount: number | null;
+  /** 이 구간에 많이 쓴 단어(많은 순, 최대 5개). 최근 화제의 단서 */
+  topWords: string[];
 }
 
 export interface Phrase {
@@ -111,6 +115,12 @@ export interface Band {
 export interface MonthCount {
   label: string;
   count: number;
+}
+
+export interface RenameEvent {
+  name: string;
+  dateKey: string | null;
+  author: string;
 }
 
 export interface Insights {
@@ -178,6 +188,7 @@ export interface Insights {
   corrections: TimedMessage[];
   unanswered: TimedMessage[];
   repeatRun: { name: string; text: string; count: number } | null;
-  renames: string[];
+  /** 카카오톡 "방 이름을 '…'으로 변경" 시스템 메시지. 시간순 */
+  renames: RenameEvent[];
   years: number[];
 }

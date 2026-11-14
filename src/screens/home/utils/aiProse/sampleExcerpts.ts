@@ -4,20 +4,34 @@ import {
   type Excerpt,
 } from "@/services/wikiWriter/wikiWriter.schema";
 import type { ChatMessage } from "@/types/chat";
-import { classify, hasLink, type MsgKind } from "../chatMetrics";
+import {
+  classify,
+  hasLink,
+  roomReference,
+  type MsgKind,
+} from "@/screens/home/utils/chatMetrics";
 
 /**
  * LLM에 보낼 대화 자료를 고른다. 원본 대화를 통째로 보내지 않기 위한 상한(EXCERPT_LIMIT)이 있다.
  *
+ * 0) 첫 기록·마지막 기록: 역사 섹션이 원문 그대로 인용하는 대화 파일의 처음과 끝 장면.
  * 1) 장면: 원본에서 연속된 메시지 묶음. 대화 장면 인용("> 이름: 메시지")이 앞뒤 맥락을 갖도록 한다.
  *    방의 흐름을 읽을 수 있게 기록 기간을 여러 시기로 나누고, 시기마다 가장 붐빈 날의 대화를 고른다.
  *    남는 자리는 전체 기간에 고르게 흩어진 지점으로 채운다.
- * 2) 한 줄 발췌: 장면에 잘 안 나온 구성원도 인물 문서 자료가 있도록 구성원별로 고르게 고른다.
+ * 2) 방 이름 발췌: 방 이름이나 "우리 방"처럼 방을 가리키는 표현이 나온 메시지. 명칭 섹션의 근거다.
+ * 3) 한 줄 발췌: 장면에 잘 안 나온 구성원도 인물 문서 자료가 있도록 구성원별로 고르게 고른다.
  *
  * 개인정보(전화번호, 계좌번호, 이메일, 주민번호)와 링크는 브라우저를 떠나기 전에 가린다.
  */
 
+/** 첫 기록: 첫 메시지부터 이 시간 이상 대화가 끊기기 전까지가 첫 티키타카다. */
+const OPENING_GAP_MINUTES = 30;
+/** 첫 티키타카가 이보다 길면 앞뒤 OPENING_PART_LINES줄씩만 보내고, 가운데는 "(중략)"으로 쓴다. */
+const OPENING_MAX_LINES = 30;
+const OPENING_PART_LINES = 15;
+const CLOSING_LINES = 5;
 const SCENE_COUNT = 24;
+const NAMING_LINES = 20;
 const SCENE_BEFORE = 3;
 const SCENE_AFTER = 5;
 /** 역사 문단의 최대 시기 수(sectionsIntro의 MAX_ERAS)와 맞춘다. */
@@ -108,29 +122,98 @@ function busyDayAnchorsByPeriod(messages: ChatMessage[]): number[] {
   return anchors;
 }
 
-function pickSceneRanges(messages: ChatMessage[]): [number, number][] {
+type SceneRange = { start: number; end: number; tag: Excerpt["tag"] };
+
+const overlaps = (ranges: SceneRange[], start: number, end: number) =>
+  ranges.some((r) => start < r.end && r.start < end);
+
+/** 날짜·시각을 알 수 없으면 null */
+function minuteOf(message: ChatMessage): number | null {
+  if (!message.dateKey || message.hour === null || message.minute === null)
+    return null;
+  const dayStart = Date.parse(`${message.dateKey}T00:00:00Z`);
+  if (Number.isNaN(dayStart)) return null;
+  return dayStart / 60_000 + message.hour * 60 + message.minute;
+}
+
+/** 첫 메시지부터 OPENING_GAP_MINUTES 이상 끊기기 전까지. 시각을 모르는 메시지는 이어진 것으로 본다. */
+function openingRanges(messages: ChatMessage[]): SceneRange[] {
+  if (!messages.length) return [];
+  let end = 1;
+  let previous = minuteOf(messages[0]);
+  while (end < messages.length) {
+    const current = minuteOf(messages[end]);
+    if (
+      previous !== null &&
+      current !== null &&
+      current - previous >= OPENING_GAP_MINUTES
+    )
+      break;
+    if (current !== null) previous = current;
+    end += 1;
+  }
+  if (end <= OPENING_MAX_LINES) return [{ start: 0, end, tag: "opening" }];
+  return [
+    { start: 0, end: OPENING_PART_LINES, tag: "opening" },
+    { start: end - OPENING_PART_LINES, end, tag: "opening" },
+  ];
+}
+
+function closingRange(
+  messages: ChatMessage[],
+  reserved: SceneRange[],
+): SceneRange[] {
+  const start = Math.max(0, messages.length - CLOSING_LINES);
+  const end = messages.length;
+  return end > start && !overlaps(reserved, start, end)
+    ? [{ start, end, tag: "closing" }]
+    : [];
+}
+
+function pickSceneRanges(messages: ChatMessage[]): SceneRange[] {
+  const opening = openingRanges(messages);
+  const reserved = [...opening, ...closingRange(messages, opening)];
+
   const evenAnchors = pickEvenly(
     messages.map((_, index) => index),
     SCENE_COUNT,
   );
   const anchors = [...busyDayAnchorsByPeriod(messages), ...evenAnchors];
 
-  const ranges: [number, number][] = [];
+  const ranges: SceneRange[] = [];
   for (const anchor of anchors) {
     if (ranges.length >= SCENE_COUNT) break;
     const start = Math.max(0, anchor - SCENE_BEFORE);
     const end = Math.min(messages.length, anchor + SCENE_AFTER);
-    const overlaps = ranges.some(([s, e]) => start < e && s < end);
-    if (!overlaps) ranges.push([start, end]);
+    if (!overlaps(ranges, start, end) && !overlaps(reserved, start, end))
+      ranges.push({ start, end, tag: null });
   }
-  return ranges.sort((a, b) => a[0] - b[0]);
+  return [...reserved, ...ranges].sort((a, b) => a.start - b.start);
 }
 
-export function sampleExcerpts(messages: ChatMessage[]): Excerpt[] {
+/** 방 이름(두 글자 이상)이나 방을 가리키는 표현이 나온 메시지. 기록 전체에서 고르게 고른다. */
+function namingIndexes(
+  messages: ChatMessage[],
+  roomTitle: string,
+  used: Set<number>,
+): number[] {
+  const indexes = messages.flatMap((message, index) => {
+    if (used.has(index) || classify(message.text) !== "text") return [];
+    const mentionsTitle =
+      roomTitle.length >= 2 && message.text.includes(roomTitle);
+    return mentionsTitle || roomReference(message.text) ? [index] : [];
+  });
+  return pickEvenly(indexes, NAMING_LINES);
+}
+
+export function sampleExcerpts(
+  messages: ChatMessage[],
+  roomTitle: string,
+): Excerpt[] {
   const used = new Set<number>();
   const scenes: Excerpt[] = [];
 
-  pickSceneRanges(messages).forEach(([start, end], scene) => {
+  pickSceneRanges(messages).forEach(({ start, end, tag }, scene) => {
     for (let index = start; index < end; index += 1) {
       const message = messages[index];
       used.add(index);
@@ -139,9 +222,23 @@ export function sampleExcerpts(messages: ChatMessage[]): Excerpt[] {
         date: message.dateKey,
         text: toExcerptText(message),
         scene,
+        tag,
       });
     }
   });
+
+  const naming: Excerpt[] = namingIndexes(messages, roomTitle, used).map(
+    (index) => {
+      used.add(index);
+      return {
+        author: messages[index].author,
+        date: messages[index].dateKey,
+        text: toExcerptText(messages[index]),
+        scene: null,
+        tag: "naming",
+      };
+    },
+  );
 
   const byAuthor = new Map<string, number[]>();
   messages.forEach((message, index) => {
@@ -151,7 +248,10 @@ export function sampleExcerpts(messages: ChatMessage[]): Excerpt[] {
     byAuthor.set(message.author, list);
   });
 
-  const singlesLimit = Math.max(0, EXCERPT_LIMIT - scenes.length);
+  const singlesLimit = Math.max(
+    0,
+    EXCERPT_LIMIT - scenes.length - naming.length,
+  );
   const perAuthor = Math.max(
     MIN_PER_AUTHOR,
     Math.floor(singlesLimit / Math.max(byAuthor.size, 1)),
@@ -167,5 +267,5 @@ export function sampleExcerpts(messages: ChatMessage[]): Excerpt[] {
       scene: null,
     }));
 
-  return [...scenes, ...singles].slice(0, EXCERPT_LIMIT);
+  return [...scenes, ...naming, ...singles].slice(0, EXCERPT_LIMIT);
 }

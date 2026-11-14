@@ -14,12 +14,12 @@ export type EncryptedPayload = {
 };
 
 function readKey() {
-  const encoded = process.env.CHAT_ENCRYPTION_KEY;
+  const encoded = process.env.ENCRYPTION_KEY;
   const key = encoded ? Buffer.from(encoded, "base64") : null;
 
   if (!key || key.length !== KEY_BYTES) {
     throw new Error(
-      "CHAT_ENCRYPTION_KEY 환경변수가 없거나 32바이트 base64 값이 아닙니다.",
+      "ENCRYPTION_KEY 환경변수가 없거나 32바이트 base64 값이 아닙니다.",
     );
   }
   return key;

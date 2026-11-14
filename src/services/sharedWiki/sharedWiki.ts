@@ -7,8 +7,11 @@ import {
   SHARE_CODE_PATTERN,
   sharedWikiSchema,
   type SharedWiki,
-} from "./sharedWiki.schema";
-import { decryptText, encryptText } from "./sharedWikiCipher";
+} from "@/services/sharedWiki/sharedWiki.schema";
+import {
+  decryptText,
+  encryptText,
+} from "@/services/sharedWiki/sharedWikiCipher";
 
 /**
  * 공유 문서 저장소(public.shared_chats) 접근.

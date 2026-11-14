@@ -1,9 +1,9 @@
 import type { RoomProfile } from "@/types/chat";
 import type { Excerpt } from "@/services/wikiWriter/wikiWriter.schema";
 import type { RoomWiki } from "@/types/wiki";
-import { sampleExcerpts } from "./aiProse/sampleExcerpts";
-import { ChatStreamParser } from "./parseChat";
-import { analyzeChatSteps } from "./analyzeChat";
+import { sampleExcerpts } from "@/screens/home/utils/aiProse/sampleExcerpts";
+import { ChatStreamParser } from "@/screens/home/utils/parseChat";
+import { analyzeChatSteps } from "@/screens/home/utils/analyzeChat";
 import {
   applyParticipantDecisions,
   defaultDecisions,
@@ -11,15 +11,15 @@ import {
   hasCandidates,
   type ParticipantCandidates,
   type ParticipantDecisions,
-} from "./participants";
-import { buildRoomWikiSteps } from "./roomWiki/buildRoomWiki";
-import { readFileChunks } from "./chunkReader";
+} from "@/screens/home/utils/participants";
+import { buildRoomWikiSteps } from "@/screens/home/utils/roomWiki/buildRoomWiki";
+import { readFileChunks } from "@/screens/home/utils/chunkReader";
 import {
   isAbortError,
   runSliced,
   throwIfAborted,
   yieldToMain,
-} from "./slicing";
+} from "@/screens/home/utils/slicing";
 
 export type LoadStage = "read" | "parse" | "analyze" | "build" | "ai" | "done";
 
@@ -144,6 +144,13 @@ export async function processChat(
       throw new ChatLoadError("제외하고 나니 분석할 메시지가 남지 않았어요.", "parse");
     }
     const cleaned = { ...parsed, messages };
+    const excludedBots = new Set(decisions.excludedBots);
+    const bots = {
+      excluded: decisions.excludedBots,
+      kept: candidates.bots
+        .map((bot) => bot.name)
+        .filter((name) => !excludedBots.has(name)),
+    };
 
     const authorCount = new Set(messages.map((m) => m.author)).size;
     report(
@@ -164,7 +171,7 @@ export async function processChat(
       signal,
     );
     const wiki = await runSliced(
-      buildRoomWikiSteps(room, messages),
+      buildRoomWikiSteps(room, messages, bots),
       (f) =>
         report(
           60 + f * 39,
@@ -177,7 +184,7 @@ export async function processChat(
     );
 
     // 전체 메시지는 여기서 버리고, AI 서술에 쓸 대표 발언만 남긴다.
-    const excerpts = sampleExcerpts(messages);
+    const excerpts = sampleExcerpts(messages, cleaned.roomTitle);
 
     report(100, "done");
     await yieldToMain();

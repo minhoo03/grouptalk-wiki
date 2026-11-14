@@ -7,14 +7,25 @@ import type {
   WikiSub,
 } from "@/types/wiki";
 import type { RoomProfile } from "@/types/chat";
-import type { Insights, Ranked, TimedMessage } from "../roomInsights";
+import type {
+  Insights,
+  Ranked,
+  TimedMessage,
+} from "@/screens/home/utils/roomInsights";
 import { formatDateKey, formatTime, truncate } from "@/utils/format";
 import { josa } from "@/utils/korean";
+
+/** 봇으로 의심된 계정 중 사용자가 분석에서 뺀 것과 남긴 것 */
+export interface BotSummary {
+  excluded: string[];
+  kept: string[];
+}
 
 export interface BuildCtx {
   room: RoomProfile;
   ins: Insights;
   title: string;
+  bots: BotSummary;
   omitted: string[];
   builtKeys: Set<string>;
   /** Adds a footnote. `ref` links it to a related sub-section, e.g. the method that explains a number. */

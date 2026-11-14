@@ -7,7 +7,7 @@ import {
   scrollToAnchor,
   scrollToAnchorWhenReady,
 } from "@/utils/scrollToAnchor";
-import type { FootnoteLinkTarget } from "./FootnoteContext";
+import type { FootnoteLinkTarget } from "@/components/wiki/FootnoteContext";
 
 type FootnoteLinkProps = {
   target: FootnoteLinkTarget;

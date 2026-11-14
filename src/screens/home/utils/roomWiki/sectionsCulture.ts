@@ -13,7 +13,7 @@ import {
   section,
   ul,
   who,
-} from "./builder";
+} from "@/screens/home/utils/roomWiki/builder";
 
 export function cultureSection(ctx: BuildCtx): WikiSec | null {
   const { ins } = ctx;

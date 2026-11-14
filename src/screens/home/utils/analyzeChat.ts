@@ -14,8 +14,8 @@ import {
   keyToDate,
   toTs,
   tokenize,
-} from "./chatMetrics";
-import { Steps, YIELD_MASK, runSync } from "./slicing";
+} from "@/screens/home/utils/chatMetrics";
+import { Steps, YIELD_MASK, runSync } from "@/screens/home/utils/slicing";
 
 const PHOTO = /^(사진(\s\d+장)?|<사진 읽지 않음>)$/;
 const EMOTICON = /^(이모티콘|\(이모티콘\)|<이모티콘>)$/;

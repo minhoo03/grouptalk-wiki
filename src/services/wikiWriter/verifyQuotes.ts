@@ -1,4 +1,4 @@
-import type { Excerpt } from "./wikiWriter.schema";
+import type { Excerpt } from "@/services/wikiWriter/wikiWriter.schema";
 
 /**
  * LLM이 쓴 인용이 실제로 보낸 발췌에 있는지 검사한다. 프롬프트의 "인용은 원본에 실제로 있는 문장이어야 한다"를 코드로 보장한다.

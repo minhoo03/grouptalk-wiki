@@ -1,6 +1,6 @@
 import { CheckIcon, XIcon } from "lucide-react";
 
-import type { LoadStage } from "../utils/processChat";
+import type { LoadStage } from "@/screens/home/utils/processChat";
 
 type UploadProgressProps = {
   percent: number;

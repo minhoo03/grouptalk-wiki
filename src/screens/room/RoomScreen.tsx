@@ -24,7 +24,7 @@ import { WikiSection } from "@/components/wiki/WikiSection";
 import { useWikiStore } from "@/store/wikiStore";
 import { formatDateKey, formatHour } from "@/utils/format";
 import { HOME_PATH, personPath } from "@/utils/wikiRoutes";
-import { ShareLinkButton } from "./components/ShareLinkButton";
+import { ShareLinkButton } from "@/screens/room/components/ShareLinkButton";
 
 const HERO_AVATAR_LIMIT = 8;
 const FOOTNOTE_SECTION_ID = "w-footnotes";
@@ -46,11 +46,14 @@ export function RoomScreen() {
   const toc: TocItem[] = [
     ...wiki.sections.flatMap((section) => [
       { id: section.id, number: section.number, title: section.title },
-      ...section.subs.map((sub) => ({
-        id: sub.id,
-        number: sub.number,
-        title: sub.title,
-      })),
+      // 제목 없는 하위 문단(예: 여담의 글머리표 목록)은 목차에 넣지 않는다.
+      ...section.subs
+        .filter((sub) => sub.title)
+        .map((sub) => ({
+          id: sub.id,
+          number: sub.number,
+          title: sub.title,
+        })),
     ]),
     { id: FOOTNOTE_SECTION_ID, number: footnoteNumber, title: "각주" },
   ];
@@ -139,9 +142,12 @@ export function RoomScreen() {
           <div className="space-y-8">
             {section.subs.map((sub) => (
               <div key={sub.id} id={sub.id} className="scroll-mt-20">
-                <h3 className="mb-3 text-xl font-bold text-ink">
-                  <span className="text-link">{sub.number}.</span> {sub.title}
-                </h3>
+                {sub.title && (
+                  <h3 className="mb-3 text-xl font-bold text-ink">
+                    <span className="text-link">{sub.number}.</span>{" "}
+                    {sub.title}
+                  </h3>
+                )}
                 <BlockRenderer blocks={sub.blocks} />
               </div>
             ))}

@@ -4,19 +4,22 @@ import {
   at,
   b,
   link,
-  p,
   say,
   section,
   ul,
   who,
-} from "./builder";
+} from "@/screens/home/utils/roomWiki/builder";
 
+/**
+ * 여담. 하위 목차 없이 글머리표 목록 하나로 둔다(제목 없는 하위 문단).
+ * 규칙 기반으로는 통계에서 보이는 의외의 사실을 모으고, AI는 대화에서 찾은 소소한 이야기로 바꾼다.
+ */
 export function triviaSection(ctx: BuildCtx): WikiSec | null {
   const { ins, room } = ctx;
   return section(ctx, "trivia", "여담", [
     {
-      key: "surprise",
-      title: "예상과 달랐던 통계",
+      key: TRIVIA_SUB_KEY,
+      title: "",
       build: () => {
         const items: Rich[] = [];
         const top = ins.members[0]?.name;
@@ -26,9 +29,10 @@ export function triviaSection(ctx: BuildCtx): WikiSec | null {
         )[0];
         if (ins.members.length >= 3 && least && longest?.name === least)
           items.push([
-            "발언량 꼴찌인 ",
+            b("말은 적어도 할 땐 한다"),
+            " — 발언량 꼴찌인 ",
             ...who(least, "이/가"),
-            " 평균 메시지 길이는 1위다. 말은 적어도 할 땐 한다.",
+            " 평균 메시지 길이는 1위다.",
           ]);
         if (
           top &&
@@ -37,7 +41,8 @@ export function triviaSection(ctx: BuildCtx): WikiSec | null {
           ins.sessions.length >= 3
         )
           items.push([
-            "발언량 1위는 ",
+            b("수다왕과 시동왕은 다르다"),
+            " — 발언량 1위는 ",
             link(top),
             "지만, 대화를 가장 많이 연 것은 ",
             link(ins.starters[0].name),
@@ -45,53 +50,37 @@ export function triviaSection(ctx: BuildCtx): WikiSec | null {
           ]);
         if (top && ins.replySpeed[0] && ins.replySpeed[0].name !== top)
           items.push([
-            "가장 답장이 빠른 사람은 수다왕이 아닌 ",
+            b("답장 속도 1위"),
+            " — 가장 답장이 빠른 사람은 수다왕이 아닌 ",
             link(ins.replySpeed[0].name),
             "이다.",
+          ]);
+        if (ins.repeatRun)
+          items.push([
+            b("연속 전송 기록"),
+            " — ",
+            ...who(ins.repeatRun.name, "이/가"),
+            ` ${say(ins.repeatRun.text)}를 ${ins.repeatRun.count}번 연속으로 보낸 기록이 있다.`,
+          ]);
+        const first = ins.timed[0];
+        const last = ins.timed[ins.timed.length - 1];
+        if (first && last)
+          items.push([
+            b("최초·최후의 메시지"),
+            ` — 최초는 ${at(first)} `,
+            link(first.author),
+            `의 ${say(first.text)}, 최후는 ${at(last)} `,
+            link(last.author),
+            `의 ${say(last.text)}다.`,
           ]);
         return items.length ? [ul(items)] : null;
       },
     },
-    {
-      key: "oddity",
-      title: "집계 중 발견한 특이사항",
-      build: () =>
-        ins.repeatRun
-          ? [
-              p(
-                ...who(ins.repeatRun.name, "이/가"),
-                ` ${say(ins.repeatRun.text)}를 ${ins.repeatRun.count}번 연속으로 보낸 기록이 있다.`,
-              ),
-            ]
-          : null,
-    },
-    {
-      key: "firstLast",
-      title: "최초·최후의 메시지",
-      build: () => {
-        const first = ins.timed[0];
-        const last = ins.timed[ins.timed.length - 1];
-        if (!first || !last) return null;
-        return [
-          ul([
-            [
-              b("최초"),
-              ` - ${at(first)}, `,
-              link(first.author),
-              `: ${say(first.text)}`,
-            ],
-            [
-              b("최후"),
-              ` - ${at(last)}, `,
-              link(last.author),
-              `: ${say(last.text)}`,
-            ],
-          ]),
-        ];
-      },
-    },
   ]);
 }
+
+/** 여담의 유일한 하위 문단. applyProse가 AI 문단을 글머리표로 바꿀 때 이 key를 쓴다. */
+export const TRIVIA_SUB_KEY = "stories";
 
 export function relatedSection(ctx: BuildCtx): WikiSec | null {
   const { room } = ctx;

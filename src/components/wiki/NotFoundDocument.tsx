@@ -2,8 +2,8 @@
 
 import { useWikiStore } from "@/store/wikiStore";
 import { HOME_PATH, ROOM_PATH, personPath } from "@/utils/wikiRoutes";
-import { DocHeader } from "./DocHeader";
-import { WikiLink } from "./WikiLink";
+import { DocHeader } from "@/components/wiki/DocHeader";
+import { WikiLink } from "@/components/wiki/WikiLink";
 
 type NotFoundDocumentProps = {
   query: string;

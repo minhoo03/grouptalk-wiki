@@ -11,21 +11,21 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 
 import { useWikiStore } from "@/store/wikiStore";
 import { ROOM_PATH } from "@/utils/wikiRoutes";
-import { sampleChat, sampleChatFileName } from "../sampleChat";
+import { sampleChat, sampleChatFileName } from "@/screens/home/sampleChat";
 import {
   isChatLoadError,
   processChat,
   type ChatSource,
   type LoadStage,
-} from "../utils/processChat";
-import { isAbortError } from "../utils/slicing";
-import { writeAiProse } from "../utils/aiProse/writeAiProse";
+} from "@/screens/home/utils/processChat";
+import { isAbortError } from "@/screens/home/utils/slicing";
+import { writeAiProse } from "@/screens/home/utils/aiProse/writeAiProse";
 import type {
   ParticipantCandidates,
   ParticipantDecisions,
-} from "../utils/participants";
-import { ParticipantReview } from "./ParticipantReview";
-import { UploadProgress } from "./UploadProgress";
+} from "@/screens/home/utils/participants";
+import { ParticipantReview } from "@/screens/home/components/ParticipantReview";
+import { UploadProgress } from "@/screens/home/components/UploadProgress";
 
 type ProgressState = {
   percent: number;
@@ -124,14 +124,24 @@ export function ChatUploadPanel() {
       );
       if (controller.signal.aborted) return;
 
-      setProgress({
-        percent: Math.round(100 * LOCAL_PROGRESS_SHARE),
-        stage: "ai",
-        fileName,
-        detail: "섹션별로 문단을 쓰는 중이에요. 1~2분 걸릴 수 있어요.",
-      });
       // 실패해도 throw하지 않고 규칙 기반 문서를 돌려준다.
-      const generated = await writeAiProse(result);
+      const generated = await writeAiProse(
+        result,
+        (done, total) => {
+          if (controller.signal.aborted) return;
+          const aiShare = total ? done / total : 1;
+          setProgress({
+            percent: Math.round(
+              100 *
+                (LOCAL_PROGRESS_SHARE + (1 - LOCAL_PROGRESS_SHARE) * aiShare),
+            ),
+            stage: "ai",
+            fileName,
+            detail: `문단 묶음 ${done}/${total}개 완료 · 묶음마다 30초~1분 정도 걸려요`,
+          });
+        },
+        controller.signal,
+      );
 
       // 취소되지 않고 끝까지 성공한 결과만 반영해 room과 wiki가 항상 함께 바뀌게 한다.
       if (controller.signal.aborted) return;

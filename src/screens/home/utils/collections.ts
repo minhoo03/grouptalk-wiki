@@ -1,4 +1,4 @@
-import type { Ranked } from "./insights.types";
+import type { Ranked } from "@/screens/home/utils/insights.types";
 
 export function inc(map: Map<string, number>, key: string, by = 1) {
   map.set(key, (map.get(key) ?? 0) + by);

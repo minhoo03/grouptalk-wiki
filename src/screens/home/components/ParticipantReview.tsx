@@ -6,7 +6,7 @@ import { useState } from "react";
 import type {
   ParticipantCandidates,
   ParticipantDecisions,
-} from "../utils/participants";
+} from "@/screens/home/utils/participants";
 
 type ParticipantReviewProps = {
   candidates: ParticipantCandidates;
