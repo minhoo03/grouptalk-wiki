@@ -39,15 +39,42 @@ async function requestJob(
   job: ProseJob,
   signal?: AbortSignal,
 ): Promise<ProseJobResult | null> {
+  const startedAt = Date.now();
   try {
+    const payload = JSON.stringify(job);
+    console.info(
+      `[단톡위키] AI ${job.kind} 서술 묶음 요청 시작 (본문 ${(payload.length / 1024).toFixed(1)}KB)`,
+    );
     const response = await fetch(PROSE_ENDPOINT, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(job),
+      body: payload,
       signal,
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return proseJobResultSchema.parse(await response.json());
+    const elapsed = Date.now() - startedAt;
+    if (!response.ok) {
+      // Vercel 함수 시간 초과(504)나 본문 크기 초과(413)는 JSON이 아닌 본문과 x-vercel-error 헤더로 온다.
+      const text = await response.text().catch(() => "");
+      console.error(
+        `[단톡위키] AI ${job.kind} 서술 묶음 HTTP ${response.status} (${elapsed}ms)`,
+        {
+          vercelError: response.headers.get("x-vercel-error"),
+          vercelId: response.headers.get("x-vercel-id"),
+          body: text.slice(0, 500),
+        },
+      );
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const result = proseJobResultSchema.parse(await response.json());
+    if (result.result) {
+      console.info(`[단톡위키] AI ${job.kind} 서술 묶음 성공 (${elapsed}ms)`);
+    } else {
+      console.warn(
+        `[단톡위키] AI ${job.kind} 서술 묶음 결과 없음 (${elapsed}ms)`,
+        result.error ?? "서버가 이유를 알려 주지 않았습니다.",
+      );
+    }
+    return result;
   } catch (error) {
     if (!signal?.aborted)
       console.error(`[단톡위키] AI ${job.kind} 서술 묶음 요청 실패`, error);

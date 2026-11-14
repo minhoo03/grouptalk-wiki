@@ -224,11 +224,14 @@ export const proseJobResultSchema = z.discriminatedUnion("kind", [
     kind: z.literal("room"),
     result: roomProseResultSchema.nullable(),
     quotaExhausted: z.boolean().optional(),
+    /** result가 null인 이유. 배포 환경 진단용으로 브라우저 콘솔에 남긴다. */
+    error: z.string().optional(),
   }),
   z.object({
     kind: z.literal("person"),
     result: personProseResultSchema.nullable(),
     quotaExhausted: z.boolean().optional(),
+    error: z.string().optional(),
   }),
 ]);
 

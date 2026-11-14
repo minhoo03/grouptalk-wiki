@@ -139,6 +139,10 @@ async function generateOnce<T>(
   { system, prompt, jsonSchema, schema }: GenerateJsonOptions<T>,
 ): Promise<T> {
   let response: Response;
+  const startedAt = Date.now();
+  console.info(
+    `[단톡위키] Gemini 요청 시작: ${model} (timeout ${timeoutMs}ms, prompt ${prompt.length}자)`,
+  );
   try {
     response = await fetch(`${API_BASE}/${model}:generateContent`, {
       method: "POST",
@@ -156,12 +160,32 @@ async function generateOnce<T>(
       }),
     });
   } catch (error) {
+    // Node fetch는 "fetch failed"만 보여 주고 실제 원인(DNS·TLS·연결 거부)은 cause에 담는다.
+    const cause =
+      error instanceof Error && error.cause ? ` (cause: ${String(error.cause)})` : "";
+    console.error(
+      `[단톡위키] Gemini fetch 예외: ${model} (${Date.now() - startedAt}ms)`,
+      error,
+    );
     // 시간 초과와 네트워크 오류는 다른 모델로 다시 시도할 수 있다.
-    throw new LlmError(`${model} 요청 실패: ${String(error)}`, true);
+    throw new LlmError(`${model} 요청 실패: ${String(error)}${cause}`, true);
   }
 
-  const body: unknown = await response.json().catch(() => null);
+  const rawText = await response.text().catch(() => "");
+  let body: unknown = null;
+  try {
+    body = JSON.parse(rawText);
+  } catch {
+    body = null;
+  }
+  console.info(
+    `[단톡위키] Gemini 응답: ${model} HTTP ${response.status} (${Date.now() - startedAt}ms, ${rawText.length}자)`,
+  );
   if (!response.ok) {
+    console.error(
+      `[단톡위키] Gemini 오류 본문: ${model} HTTP ${response.status}`,
+      rawText.slice(0, 1000),
+    );
     const parsedError = errorSchema.safeParse(body);
     // 429 메시지는 여러 줄의 한도 설명이 붙어 길어서 첫 줄만 남긴다.
     const detail = parsedError.success

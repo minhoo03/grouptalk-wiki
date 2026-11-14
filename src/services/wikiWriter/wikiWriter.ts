@@ -542,8 +542,11 @@ export async function writeProseJob(job: ProseJob): Promise<ProseJobResult> {
       `[단톡위키] AI ${label} 서술 묶음 실패${quotaExhausted ? " (일일 한도 소진)" : ""}`,
       error,
     );
+    // 배포 환경 진단용으로 실패 이유를 브라우저에도 돌려준다. API 키는 메시지에 포함되지 않는다.
+    const message =
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     return job.kind === "room"
-      ? { kind: "room", result: null, quotaExhausted }
-      : { kind: "person", result: null, quotaExhausted };
+      ? { kind: "room", result: null, quotaExhausted, error: message }
+      : { kind: "person", result: null, quotaExhausted, error: message };
   }
 }
