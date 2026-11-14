@@ -1,13 +1,22 @@
-import type { Excerpt } from "@/services/wikiWriter/wikiWriter.schema";
+import {
+  proseJobResultSchema,
+  type Excerpt,
+  type OverviewInfo,
+  type PersonProseResult,
+  type ProseJob,
+  type ProseJobResult,
+  type RoomProseResult,
+  type TimelineEvent,
+} from "@/services/wikiWriter/wikiWriter.schema";
 import type { GeneratedWiki } from "@/store/wikiStore";
 import type { RoomProfile } from "@/types/chat";
 import type { RoomWiki } from "@/types/wiki";
-import { writeWikiProseAction } from "@/screens/home/writeWikiProseAction";
 import {
   applyRoomProse,
   toPersonProse,
 } from "@/screens/home/utils/aiProse/applyProse";
 import { buildProseRequest } from "@/screens/home/utils/aiProse/buildProseRequest";
+import { splitProseJobs } from "@/screens/home/utils/aiProse/splitProseJobs";
 
 type WriteAiProseInput = {
   room: RoomProfile;
@@ -15,40 +24,114 @@ type WriteAiProseInput = {
   excerpts: Excerpt[];
 };
 
+/** 끝난 묶음 수와 전체 묶음 수 */
+export type AiProseProgressHandler = (done: number, total: number) => void;
+
+const PROSE_ENDPOINT = "/api/wiki-prose";
+/**
+ * 동시에 보내는 묶음 수. 묶음은 두 모델에 번갈아 배정되므로 모델마다 2개씩 동시에 돈다.
+ * 묶음 하나가 30~60초 걸리면 모델별 분당 요청이 4회 안쪽이라 무료 등급 한도(분당 5회)를 넘지 않는다.
+ */
+const CONCURRENCY = 4;
+
+/** 묶음 하나를 요청한다. 실패하면 null이고, 그 부분은 규칙 기반 문장이 남는다. */
+async function requestJob(
+  job: ProseJob,
+  signal?: AbortSignal,
+): Promise<ProseJobResult | null> {
+  try {
+    const response = await fetch(PROSE_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(job),
+      signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return proseJobResultSchema.parse(await response.json());
+  } catch (error) {
+    if (!signal?.aborted)
+      console.error(`[단톡위키] AI ${job.kind} 서술 묶음 요청 실패`, error);
+    return null;
+  }
+}
+
+/** 묶음을 CONCURRENCY개씩 동시에 요청하고, 하나 끝날 때마다 진행률을 알린다. */
+async function runJobs(
+  jobs: ProseJob[],
+  onProgress: AiProseProgressHandler,
+  signal?: AbortSignal,
+): Promise<(ProseJobResult | null)[]> {
+  const results: (ProseJobResult | null)[] = [];
+  let next = 0;
+  let done = 0;
+  onProgress(done, jobs.length);
+
+  // 일일 한도가 끝나면 남은 묶음도 모두 거절되므로 보내지 않는다.
+  let quotaExhausted = false;
+
+  async function worker() {
+    while (next < jobs.length && !signal?.aborted && !quotaExhausted) {
+      const index = next;
+      next += 1;
+      const result = await requestJob(jobs[index], signal);
+      results[index] = result;
+      if (result?.quotaExhausted && !quotaExhausted) {
+        quotaExhausted = true;
+        console.warn(
+          "[단톡위키] AI 일일 사용 한도가 끝나 남은 서술 요청을 보내지 않습니다. 규칙 기반 문장을 사용합니다.",
+        );
+      }
+      done += 1;
+      onProgress(quotaExhausted ? jobs.length : done, jobs.length);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, worker),
+  );
+  return results;
+}
+
 /**
  * 규칙 기반 문서에 AI 서술을 입힌다.
- * AI 서술은 부가 기능이므로 어떤 실패도 throw하지 않고 규칙 기반 문서를 그대로 돌려준다.
+ * AI 서술은 부가 기능이므로 어떤 실패도 throw하지 않고, 실패한 묶음은 규칙 기반 문장을 그대로 둔다.
  */
-export async function writeAiProse({
-  room,
-  wiki,
-  excerpts,
-}: WriteAiProseInput): Promise<GeneratedWiki> {
-  const fallback: GeneratedWiki = {
-    room,
-    wiki,
-    personProse: {},
-    aiWritten: false,
-  };
+export async function writeAiProse(
+  { room, wiki, excerpts }: WriteAiProseInput,
+  onProgress: AiProseProgressHandler,
+  signal?: AbortSignal,
+): Promise<GeneratedWiki> {
+  const jobs = splitProseJobs(buildProseRequest(room, wiki, excerpts));
+  const results = await runJobs(jobs, onProgress, signal);
 
-  try {
-    const response = await writeWikiProseAction(
-      buildProseRequest(room, wiki, excerpts),
-    );
-    const memberNames = new Set(room.participants.map((p) => p.name));
-    const personProse = toPersonProse(response.person, memberNames);
-    const aiWritten =
-      Boolean(response.room?.sections.length) ||
-      Object.keys(personProse).length > 0;
-
-    return {
-      room,
-      wiki: applyRoomProse(wiki, response.room, memberNames),
-      personProse,
-      aiWritten,
-    };
-  } catch (error) {
-    console.error("[단톡위키] AI 서술을 받지 못해 기본 문장을 사용합니다.", error);
-    return fallback;
+  const roomSections: RoomProseResult["sections"] = [];
+  const people: PersonProseResult["people"] = [];
+  let overviewInfo: OverviewInfo | null = null;
+  let timeline: TimelineEvent[] | null = null;
+  for (const response of results) {
+    if (response?.kind === "room" && response.result) {
+      roomSections.push(...response.result.sections);
+      overviewInfo ??= response.result.overviewInfo ?? null;
+      timeline ??= response.result.timeline ?? null;
+    }
+    if (response?.kind === "person" && response.result)
+      people.push(...response.result.people);
   }
+
+  const memberNames = new Set(room.participants.map((p) => p.name));
+  const personProse = toPersonProse({ people }, memberNames);
+  return {
+    room,
+    wiki: applyRoomProse(
+      wiki,
+      { sections: roomSections, overviewInfo, timeline },
+      memberNames,
+    ),
+    personProse,
+    aiWritten:
+      roomSections.length > 0 ||
+      overviewInfo !== null ||
+      timeline !== null ||
+      Object.keys(personProse).length > 0,
+  };
 }

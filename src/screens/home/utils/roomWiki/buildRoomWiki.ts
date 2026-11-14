@@ -8,7 +8,10 @@ import type {
 } from "@/types/wiki";
 import { computeInsightsSteps } from "@/screens/home/utils/roomInsights";
 import { Steps, runSync, scaled } from "@/screens/home/utils/slicing";
-import { BuildCtx } from "@/screens/home/utils/roomWiki/builder";
+import {
+  BuildCtx,
+  type BotSummary,
+} from "@/screens/home/utils/roomWiki/builder";
 import {
   historySection,
   namingSection,
@@ -18,7 +21,10 @@ import {
   cultureSection,
   slangSection,
 } from "@/screens/home/utils/roomWiki/sectionsCulture";
-import { memberSection } from "@/screens/home/utils/roomWiki/sectionsPeople";
+import {
+  hallOfFameSection,
+  memberSection,
+} from "@/screens/home/utils/roomWiki/sectionsPeople";
 import {
   controversySection,
   episodeSection,
@@ -29,7 +35,7 @@ import {
 } from "@/screens/home/utils/roomWiki/sectionsMisc";
 
 /**
- * 나무위키 단체 문서의 일반적인 목차 순서를 따른다: 개요 → 명칭 → 역사 → 멤버 → 특징 → 유행어 → 사건 → 여담 → 관련 문서.
+ * 나무위키 단체 문서의 일반적인 목차 순서를 따른다: 개요 → 명칭 → 역사 → 멤버 → 특징 → 유행어 → 에피소드 → 논란 → 명예의 전당 → 여담 → 관련 문서.
  * 숫자 위주의 통계·어워즈·연감·유형 도감·기록 보관소·분석 기준 섹션은 두지 않는다. 숫자는 각 섹션의 근거로만 쓴다.
  */
 const MAIN_SECTIONS = [
@@ -41,19 +47,24 @@ const MAIN_SECTIONS = [
   slangSection,
   episodeSection,
   controversySection,
+  hallOfFameSection,
   triviaSection,
 ];
+
+const NO_BOTS: BotSummary = { excluded: [], kept: [] };
 
 export function buildRoomWiki(
   room: RoomProfile,
   messages: ChatMessage[],
+  bots: BotSummary = NO_BOTS,
 ): RoomWiki {
-  return runSync(buildRoomWikiSteps(room, messages));
+  return runSync(buildRoomWikiSteps(room, messages, bots));
 }
 
 export function* buildRoomWikiSteps(
   room: RoomProfile,
   messages: ChatMessage[],
+  bots: BotSummary = NO_BOTS,
 ): Steps<RoomWiki> {
   const ins = yield* scaled(computeInsightsSteps(messages), 0, 0.95);
 
@@ -62,6 +73,7 @@ export function* buildRoomWikiSteps(
     room,
     ins,
     title: room.roomTitle,
+    bots,
     omitted: [],
     builtKeys: new Set(),
     fn: (text, ref) => {

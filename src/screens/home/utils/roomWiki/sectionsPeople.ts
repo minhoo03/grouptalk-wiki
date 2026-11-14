@@ -1,4 +1,6 @@
+import type { PersonProfile } from "@/types/chat";
 import type { Rich, WikiSec } from "@/types/wiki";
+import { HALL_OF_FAME_KEY } from "@/services/wikiWriter/wikiWriter.schema";
 import { daysBetween } from "@/screens/home/utils/chatMetrics";
 import type { Ranked } from "@/screens/home/utils/roomInsights";
 import {
@@ -7,7 +9,9 @@ import {
   day,
   link,
   muted,
+  n,
   p,
+  say,
   section,
   ul,
 } from "@/screens/home/utils/roomWiki/builder";
@@ -138,3 +142,46 @@ export function memberSection(ctx: BuildCtx): WikiSec | null {
   ]);
 }
 
+
+/** 규칙 기반 제목의 대표 장면: 별명 → 말버릇 → 메시지 수 */
+function hallOfFameHeadline(person: PersonProfile) {
+  if (person.badges[0]) return person.badges[0].name;
+  if (person.catchphrases[0]) return `“${person.catchphrases[0].word}”`;
+  return `메시지 ${n(person.messageCount)}개`;
+}
+
+/**
+ * 명예의 전당. 구성원 전원에게 하위 문단 하나씩 둔다(누락 방지).
+ * 제목은 "이름 — 대표 장면" 형식이고, AI가 쓰면 제목과 본문이 그 사람의 대표 장면으로 바뀐다.
+ */
+export function hallOfFameSection(ctx: BuildCtx): WikiSec | null {
+  const { room } = ctx;
+  return section(
+    ctx,
+    HALL_OF_FAME_KEY,
+    "명예의 전당",
+    room.participants.map((person, index) => ({
+      key: `m${index + 1}`,
+      title: `${person.name} — ${hallOfFameHeadline(person)}`,
+      build: () => {
+        const badge = person.badges[0];
+        const phrases = person.catchphrases.slice(0, 3);
+        const content: Rich = [
+          link(person.name),
+          ` 메시지 ${n(person.messageCount)}개로 발언량 ${person.rank}위.`,
+        ];
+        if (badge)
+          content.push(" 별명은 ", b(badge.name), `(${badge.description}).`);
+        if (phrases.length)
+          content.push(
+            ` 말버릇은 ${phrases.map((c) => `“${c.word}”(${n(c.count)}회)`).join(", ")}.`,
+          );
+        if (person.longestMessage)
+          content.push(
+            ` 가장 긴 메시지는 ${say(person.longestMessage, 80)}였다.`,
+          );
+        return [p(...content)];
+      },
+    })),
+  );
+}
