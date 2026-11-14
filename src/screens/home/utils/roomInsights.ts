@@ -16,6 +16,9 @@ import type {
 } from "@/screens/home/utils/insights.types";
 import {
   BoundedCounter,
+  CORRECTION_CUE,
+  MISUNDERSTAND_CUE,
+  RUMOR_CUE,
   addDays,
   classify,
   daysBetween,
@@ -59,10 +62,6 @@ const VANISHED_MIN_SPAN_DAYS = 30;
 /** "현재"로 보는 기간: 마지막 기록일 기준 최근 30일 */
 const RECENT_DAYS = 30;
 const RECENT_TOP_WORDS = 5;
-const MISUNDERSTAND =
-  /오해|그게 아니라|그런 뜻(이)? 아니|농담이(야|었)|장난이(야|었)/;
-const RUMOR = /카더라|소문|썰 (들었|풀)|들었는데/;
-const CORRECTION = /정정|오타|잘못 (말|보냄|보냈|썼)|취소할게|수정할게/;
 const RENAME = /방\s?이름을\s?['"“]?(.+?)['"”]?\s?(?:으로|로)\s?변경/;
 const CALL = /^(@|야\s|얘들아|다들|여러분)/;
 const JAMO_ONLY = /^[ㄱ-ㅎㅏ-ㅣ\s.!?~]+$/;
@@ -146,6 +145,7 @@ export function* computeInsightsSteps(
   const dayWeekday = new Map<string, number>();
   let wdDays = 0;
   let weDays = 0;
+  const weekdayDays = [0, 0, 0, 0, 0, 0, 0];
   if (startKey) {
     for (let d = 0; d < spanDays; d++) {
       const k = addDays(startKey, d);
@@ -169,6 +169,7 @@ export function* computeInsightsSteps(
       buckets[bi].days++;
       const w = keyToDate(k).getDay();
       dayWeekday.set(k, w);
+      weekdayDays[w]++;
       if (w === 0 || w === 6) weDays++;
       else wdDays++;
     }
@@ -409,10 +410,10 @@ export function* computeInsightsSteps(
     }
 
     if (isText) {
-      if (misunderstandings.length < 5 && MISUNDERSTAND.test(m.text))
+      if (misunderstandings.length < 5 && MISUNDERSTAND_CUE.test(m.text))
         misunderstandings.push(m);
-      if (rumors.length < 5 && RUMOR.test(m.text)) rumors.push(m);
-      if (corrections.length < 5 && CORRECTION.test(m.text))
+      if (rumors.length < 5 && RUMOR_CUE.test(m.text)) rumors.push(m);
+      if (corrections.length < 5 && CORRECTION_CUE.test(m.text))
         corrections.push(m);
     }
     const rn = m.text.match(RENAME);
@@ -734,6 +735,7 @@ export function* computeInsightsSteps(
     recent,
     months,
     weekday,
+    weekdayDays,
     weekdayAvg: wdDays
       ? weekday.slice(1, 6).reduce((a, b) => a + b, 0) / wdDays
       : 0,

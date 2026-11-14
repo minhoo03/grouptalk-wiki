@@ -14,12 +14,13 @@ const DEFAULT_MODEL = "gemini-3.5-flash";
 /** 기본 모델이 혼잡(503)·한도 초과(429)·시간 초과일 때 한 번 더 시도할 모델 */
 const FALLBACK_MODEL = "gemini-2.5-flash";
 /**
- * 묶음 하나의 응답은 30~60초 안에 끝나도록 나눠 보낸다(ROOM_SUBS_PER_JOB, PEOPLE_PER_JOB).
- * 첫 시도가 이 시간을 넘기면 다른 모델로 한 번 더 시도할 시간이 남도록 짧게 둔다.
+ * 하루 요청 수를 아끼려고 묶음을 크게 보내므로(ROOM_JOB_GROUPS, PEOPLE_PER_JOB) 응답 하나가 1~2분 걸린다.
+ * 초당 약 100토큰 기준으로 1만 토큰 이상 받을 수 있는 시간이다.
+ * 혼잡(503)·분당 한도(429)처럼 빨리 실패한 경우에만 다른 모델로 다시 시도할 시간이 남는다.
  */
-const ATTEMPT_TIMEOUT_MS = 90_000;
+const ATTEMPT_TIMEOUT_MS = 150_000;
 /** 한 번의 generateJson 호출(재시도 포함)에 쓸 수 있는 전체 시간. route의 maxDuration보다 짧아야 한다. */
-export const CALL_DEADLINE_MS = 150_000;
+export const CALL_DEADLINE_MS = 170_000;
 /** 남은 시간이 이보다 짧으면 새로 시도해도 묶음 하나를 다 쓰기 어렵다. */
 const MIN_ATTEMPT_MS = 45_000;
 /** 기본 모델 → 대체 모델 → (대기) 기본 모델 → 대체 모델 */

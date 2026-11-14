@@ -119,6 +119,24 @@ export function compact(
 export const day = (key: string | null) => formatDateKey(key);
 export const at = (m: TimedMessage) =>
   `${formatDateKey(m.dateKey)} ${formatTime(m.hour, m.minute)}`.trim();
+/**
+ * timed[index] 앞뒤 대화를 대화 장면 블록으로 보여 준다.
+ * 해명·소문처럼 한 줄만 떼면 이해되지 않는 메시지를 맥락과 함께 보여 줄 때 쓴다.
+ */
+export function dialogueAround(
+  ins: Insights,
+  index: number,
+  before = 3,
+  after = 4,
+): Block {
+  return {
+    type: "dialogue",
+    lines: ins.timed
+      .slice(Math.max(0, index - before), index + after + 1)
+      .map((m) => ({ author: m.author, text: truncate(m.text, 80) })),
+  };
+}
+
 export const say = (text: string, max = 50) => `“${truncate(text, max)}”`;
 export const pct = (a: number, total: number) =>
   total ? Math.round((a / total) * 1000) / 10 : 0;

@@ -5,7 +5,11 @@ import {
 } from "@/services/wikiWriter/wikiWriter.schema";
 import type { ChatMessage } from "@/types/chat";
 import {
+  CORRECTION_CUE,
+  MISUNDERSTAND_CUE,
+  RUMOR_CUE,
   classify,
+  daysBetween,
   hasLink,
   roomReference,
   type MsgKind,
@@ -15,11 +19,14 @@ import {
  * LLM에 보낼 대화 자료를 고른다. 원본 대화를 통째로 보내지 않기 위한 상한(EXCERPT_LIMIT)이 있다.
  *
  * 0) 첫 기록·마지막 기록: 역사 섹션이 원문 그대로 인용하는 대화 파일의 처음과 끝 장면.
+ *    사건 후보: 해명·소문·정정 표현이나 긴 침묵 뒤 첫 대화의 앞뒤. 한 줄만으로는 무슨 일인지 알 수 없어
+ *    에피소드·논란 섹션이 흐름을 따라갈 수 있게 장면으로 보낸다.
  * 1) 장면: 원본에서 연속된 메시지 묶음. 대화 장면 인용("> 이름: 메시지")이 앞뒤 맥락을 갖도록 한다.
  *    방의 흐름을 읽을 수 있게 기록 기간을 여러 시기로 나누고, 시기마다 가장 붐빈 날의 대화를 고른다.
  *    남는 자리는 전체 기간에 고르게 흩어진 지점으로 채운다.
  * 2) 방 이름 발췌: 방 이름이나 "우리 방"처럼 방을 가리키는 표현이 나온 메시지. 명칭 섹션의 근거다.
- * 3) 한 줄 발췌: 장면에 잘 안 나온 구성원도 인물 문서 자료가 있도록 구성원별로 고르게 고른다.
+ * 3) 관행 단서 발췌: 사과·지적·생일·정산·도착 인증·인사처럼 반복되는 관행의 단서가 될 만한 메시지.
+ * 4) 한 줄 발췌: 장면에 잘 안 나온 구성원도 인물 문서 자료가 있도록 구성원별로 고르게 고른다.
  *
  * 개인정보(전화번호, 계좌번호, 이메일, 주민번호)와 링크는 브라우저를 떠나기 전에 가린다.
  */
@@ -30,8 +37,20 @@ const OPENING_GAP_MINUTES = 30;
 const OPENING_MAX_LINES = 30;
 const OPENING_PART_LINES = 15;
 const CLOSING_LINES = 5;
+const EVENT_SCENES = 10;
+const EVENT_BEFORE = 6;
+const EVENT_AFTER = 9;
+/** 이 일수 이상 대화가 끊겼다가 다시 시작된 대화를 사건 후보로 본다. */
+const EVENT_SILENCE_DAYS = 7;
+const EVENT_CUE = new RegExp(
+  [MISUNDERSTAND_CUE, RUMOR_CUE, CORRECTION_CUE].map((r) => r.source).join("|"),
+);
 const SCENE_COUNT = 24;
 const NAMING_LINES = 20;
+const CUSTOM_LINES = 24;
+/** 관행·규칙의 단서가 될 만한 표현. 후보일 뿐이고, 실제 관행인지는 AI가 날짜와 반응을 보고 판단한다. */
+const CUSTOM_CUE =
+  /읽씹|안\s?읽|미안|ㅈㅅ|죄송|선\s?넘|생일|생축|정산|입금|송금|n빵|엔빵|도착|출발|출근|퇴근|잘\s?자|굿밤|좋은\s?아침|ㄱㅁ|고마워/;
 const SCENE_BEFORE = 3;
 const SCENE_AFTER = 5;
 /** 역사 문단의 최대 시기 수(sectionsIntro의 MAX_ERAS)와 맞춘다. */
@@ -170,9 +189,44 @@ function closingRange(
     : [];
 }
 
+/** 해명·소문·정정 표현과 긴 침묵 뒤 첫 메시지의 index. 기록 전체에서 고르게 고른다. */
+function eventAnchors(messages: ChatMessage[]): number[] {
+  const anchors: number[] = [];
+  let lastDateKey: string | null = null;
+  messages.forEach((message, index) => {
+    const isText = classify(message.text) === "text";
+    if (isText && EVENT_CUE.test(message.text)) anchors.push(index);
+    if (
+      message.dateKey &&
+      lastDateKey &&
+      daysBetween(lastDateKey, message.dateKey) >= EVENT_SILENCE_DAYS
+    )
+      anchors.push(index);
+    if (message.dateKey) lastDateKey = message.dateKey;
+  });
+  return pickEvenly(anchors, EVENT_SCENES * 2);
+}
+
+/** 사건 후보 앞뒤 장면. 겹치는 후보는 하나로 본다. */
+function eventRanges(
+  messages: ChatMessage[],
+  reserved: SceneRange[],
+): SceneRange[] {
+  const ranges: SceneRange[] = [];
+  for (const anchor of eventAnchors(messages)) {
+    if (ranges.length >= EVENT_SCENES) break;
+    const start = Math.max(0, anchor - EVENT_BEFORE);
+    const end = Math.min(messages.length, anchor + EVENT_AFTER + 1);
+    if (!overlaps(ranges, start, end) && !overlaps(reserved, start, end))
+      ranges.push({ start, end, tag: "event" });
+  }
+  return ranges;
+}
+
 function pickSceneRanges(messages: ChatMessage[]): SceneRange[] {
   const opening = openingRanges(messages);
-  const reserved = [...opening, ...closingRange(messages, opening)];
+  const edges = [...opening, ...closingRange(messages, opening)];
+  const reserved = [...edges, ...eventRanges(messages, edges)];
 
   const evenAnchors = pickEvenly(
     messages.map((_, index) => index),
@@ -204,6 +258,18 @@ function namingIndexes(
     return mentionsTitle || roomReference(message.text) ? [index] : [];
   });
   return pickEvenly(indexes, NAMING_LINES);
+}
+
+/** 관행 단서 표현이 나온 메시지. 기록 전체에서 고르게 고른다. */
+function customIndexes(messages: ChatMessage[], used: Set<number>): number[] {
+  const indexes = messages.flatMap((message, index) =>
+    !used.has(index) &&
+    classify(message.text) === "text" &&
+    CUSTOM_CUE.test(message.text)
+      ? [index]
+      : [],
+  );
+  return pickEvenly(indexes, CUSTOM_LINES);
 }
 
 export function sampleExcerpts(
@@ -240,6 +306,17 @@ export function sampleExcerpts(
     },
   );
 
+  const custom: Excerpt[] = customIndexes(messages, used).map((index) => {
+    used.add(index);
+    return {
+      author: messages[index].author,
+      date: messages[index].dateKey,
+      text: toExcerptText(messages[index]),
+      scene: null,
+      tag: "custom",
+    };
+  });
+
   const byAuthor = new Map<string, number[]>();
   messages.forEach((message, index) => {
     if (used.has(index) || !isGoodSingleLine(message)) return;
@@ -250,7 +327,7 @@ export function sampleExcerpts(
 
   const singlesLimit = Math.max(
     0,
-    EXCERPT_LIMIT - scenes.length - naming.length,
+    EXCERPT_LIMIT - scenes.length - naming.length - custom.length,
   );
   const perAuthor = Math.max(
     MIN_PER_AUTHOR,
@@ -267,5 +344,8 @@ export function sampleExcerpts(
       scene: null,
     }));
 
-  return [...scenes, ...naming, ...singles].slice(0, EXCERPT_LIMIT);
+  return [...scenes, ...naming, ...custom, ...singles].slice(
+    0,
+    EXCERPT_LIMIT,
+  );
 }

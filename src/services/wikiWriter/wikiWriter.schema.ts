@@ -22,7 +22,7 @@ export type PersonSectionKey = (typeof PERSON_SECTION_KEYS)[number];
  * AI가 항목(소제목)을 직접 정하는 단톡방 섹션. 규칙 기반 하위 문단은 사실 묶음 하나로 합쳐 보내고,
  * AI가 돌려준 항목으로 섹션의 하위 문단 전체를 바꾼다.
  */
-export const ITEM_SECTION_KEYS = ["episodes", "controversy"] as const;
+export const ITEM_SECTION_KEYS = ["culture", "episodes", "controversy"] as const;
 /** 구성원마다 하위 문단 하나. AI는 제목과 본문을 쓴다. */
 export const HALL_OF_FAME_KEY = "hallOfFame";
 
@@ -30,13 +30,23 @@ export function isItemSection(key: string) {
   return (ITEM_SECTION_KEYS as readonly string[]).includes(key);
 }
 
-export const EXCERPT_LIMIT = 300;
+/** 사건 후보·첫 기록·마지막 기록 장면까지 담는다. 줄 수가 늘어도 요청 수는 같다. */
+export const EXCERPT_LIMIT = 500;
 /**
- * 묶음 하나(Gemini 호출 1회)에 넣는 양. 한 응답이 길면 생성에만 2분 넘게 걸려 시간 초과로 끝나므로,
- * 응답 하나가 30~60초 안에 끝나는 크기로 나눈다.
+ * 묶음(Gemini 호출 1회) 나누기. 무료 등급의 실제 제약은 하루 요청 수(모델별 20회)라
+ * 응답이 길어지더라도 요청 수를 줄인다. 관련 섹션을 한 요청에서 쓰면 섹션끼리 내용이 덜 겹친다.
+ * 단톡방은 아래 섹션 묶음마다 한 번, 인물은 PEOPLE_PER_JOB명씩 한 번 요청한다.
  */
-export const ROOM_SUBS_PER_JOB = 6;
-export const PEOPLE_PER_JOB = 4;
+export const ROOM_JOB_GROUPS: readonly (readonly string[])[] = [
+  ["overview", "naming", "history"],
+  ["members", "culture", "slang", "episodes", "controversy"],
+  ["hallOfFame", "trivia"],
+];
+/** 명예의 전당은 구성원 수만큼 하위 문단이 생기므로 이 인원씩 끊는다. */
+export const HALL_OF_FAME_PER_JOB = 20;
+/** 서버가 받는 묶음 하나의 하위 문단 상한. 보통의 방은 묶음당 10~20개다. */
+export const ROOM_SUBS_MAX_PER_JOB = 30;
+export const PEOPLE_PER_JOB = 8;
 export const EXCERPT_TEXT_LIMIT = 160;
 const FACTS_LIMIT = 6000;
 const NAME_LIMIT = 100;
@@ -54,8 +64,13 @@ export const excerptSchema = z.object({
   /**
    * opening·closing: 대화 파일의 첫 티키타카와 마지막 대화 장면.
    * naming: 방 이름이나 방을 가리키는 표현이 나온 한 줄 발췌(명칭 섹션의 근거).
+   * custom: 사과·지적·생일·정산·도착 인증처럼 관행·규칙의 단서가 되는 한 줄 발췌(방의 성격과 문화 섹션의 근거).
+   * event: 해명·소문·정정·긴 침묵 뒤 대화처럼 앞뒤를 봐야 이해되는 사건 후보 장면(에피소드·논란 섹션의 근거).
    */
-  tag: z.enum(["opening", "closing", "naming"]).nullable().optional(),
+  tag: z
+    .enum(["opening", "closing", "naming", "custom", "event"])
+    .nullable()
+    .optional(),
 });
 
 export const memberSummarySchema = z.object({
@@ -115,8 +130,8 @@ export const proseJobSchema = z.discriminatedUnion("kind", [
     request: roomProseRequestSchema.refine(
       (request) =>
         request.sections.reduce((sum, s) => sum + s.subs.length, 0) <=
-        ROOM_SUBS_PER_JOB,
-      `하위 문단은 묶음당 ${ROOM_SUBS_PER_JOB}개 이하여야 합니다.`,
+        ROOM_SUBS_MAX_PER_JOB,
+      `하위 문단은 묶음당 ${ROOM_SUBS_MAX_PER_JOB}개 이하여야 합니다.`,
     ),
   }),
   z.object({

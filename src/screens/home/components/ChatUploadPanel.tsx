@@ -137,7 +137,7 @@ export function ChatUploadPanel() {
             ),
             stage: "ai",
             fileName,
-            detail: `문단 묶음 ${done}/${total}개 완료 · 묶음마다 30초~1분 정도 걸려요`,
+            detail: `문단 묶음 ${done}/${total}개 완료 · 1~2분 정도 걸려요`,
           });
         },
         controller.signal,

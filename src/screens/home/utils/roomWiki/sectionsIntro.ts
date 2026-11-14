@@ -1,11 +1,7 @@
 import type { Rich, WikiSec } from "@/types/wiki";
 import { josa } from "@/utils/korean";
-import { roomReference } from "@/screens/home/utils/chatMetrics";
-import {
-  bucketOf,
-  type Insights,
-  type TimedMessage,
-} from "@/screens/home/utils/roomInsights";
+import { isTopicWord } from "@/screens/home/utils/chatMetrics";
+import { bucketOf, type Insights } from "@/screens/home/utils/roomInsights";
 import {
   BuildCtx,
   at,
@@ -20,7 +16,6 @@ import {
   say,
   section,
   table,
-  ul,
   who,
 } from "@/screens/home/utils/roomWiki/builder";
 
@@ -112,7 +107,10 @@ export function overviewSection(ctx: BuildCtx): WikiSec | null {
         if (!ins.startKey || !ins.endKey) return null;
         const peakIdx = findPeakBucket(ins);
         const peakRange = peakIdx >= 0 ? bucketActiveRange(ins, peakIdx) : null;
-        const topics = room.topWords.slice(0, 3).map((w) => w.word);
+        const topics = room.topWords
+          .map((w) => w.word)
+          .filter(isTopicWord)
+          .slice(0, 3);
         const rows: Rich[][] = [
           [["방 이름"], [title]],
           [["인원"], [membersText(ctx)]],
@@ -136,7 +134,7 @@ export function overviewSection(ctx: BuildCtx): WikiSec | null {
         if (topics.length)
           rows.push([
             [OVERVIEW_INFO_LABELS.topics],
-            [topics.join(", "), muted(" (자주 쓴 단어 기준)")],
+            [topics.join(", "), muted(" (자주 나온 낱말 기준)")],
           ]);
         rows.push([[OVERVIEW_INFO_LABELS.mood], [moodFallback(ctx)]]);
         if (peakIdx >= 0 && peakRange)
@@ -177,9 +175,10 @@ export function overviewSection(ctx: BuildCtx): WikiSec | null {
             `직전 ${recent.days}일(${n(recent.prevCount)}개) 대비 ${signedPercent(change)}${change === 0 ? "로 같은 수준이다." : change > 0 ? " 늘었다." : " 줄었다."}`,
           );
         }
-        if (recent.topWords.length)
+        const recentWords = recent.topWords.filter(isTopicWord);
+        if (recentWords.length)
           sentences.push(
-            `이 기간에 자주 나온 단어는 ${recent.topWords.slice(0, 3).join(", ")}다.`,
+            `이 기간에 자주 나온 낱말은 ${recentWords.slice(0, 3).join(", ")}다.`,
           );
         return [
           p(
@@ -232,67 +231,17 @@ export function namingSection(ctx: BuildCtx): WikiSec | null {
       },
     },
     {
-      key: "renames",
-      title: "역대 방 이름",
-      build: () =>
-        ins.renames.length
-          ? [
-              p("대화 기록에 남은 방 이름 변경 내역은 다음과 같다."),
-              ul([
-                ...ins.renames.map((r): Rich => [
-                  `${day(r.dateKey)}: `,
-                  b(r.name),
-                  ` (${r.author} 변경)`,
-                ]),
-                [b(title), muted(" (현재)")],
-              ]),
-            ]
-          : [
-              p(
-                "기록 기간 내 방 이름이 변경된 이력은 확인되지 않으며, 단일 명칭으로 쭉 유지되어 왔다.",
-              ),
-            ],
-    },
-    {
       key: "aliases",
       title: "별칭 및 줄임말",
-      // 규칙 기반으로는 방을 가리키는 표현 후보만 센다. 별칭인지, 어떤 맥락인지는 AI가 발췌를 읽고 쓴다.
-      build: () => {
-        const found = new Map<string, { count: number; first: TimedMessage }>();
-        for (const m of ins.timed) {
-          if (m.kind !== "text") continue;
-          const phrase = roomReference(m.text);
-          if (!phrase) continue;
-          const entry = found.get(phrase);
-          if (entry) entry.count += 1;
-          else found.set(phrase, { count: 1, first: m });
-        }
-        if (!found.size)
-          return [
-            p(
-              "단톡방 자체를 가리키는 별도의 줄임말이나 별칭은 기록에서 확인되지 않는다.",
-            ),
-          ];
-        return [
-          p("대화에서 이 방을 가리킬 때 쓰인 표현은 다음과 같다."),
-          ul(
-            [...found.entries()]
-              .sort((a, c) => c[1].count - a[1].count)
-              .slice(0, ALIAS_LIMIT)
-              .map(([phrase, { count, first }]): Rich => [
-                b(phrase),
-                ` ${n(count)}회. 첫 사용은 ${at(first)}, `,
-                ...who(first.author, "이/가"),
-                ` 남긴 ${say(first.text)}.`,
-              ]),
-          ),
-        ];
-      },
+      // "이 방", "우리 방", "여기" 같은 일반 지칭은 별칭이 아니다. 고유한 별칭은 AI가 대화에서 찾는다.
+      build: () => [
+        p(
+          "단톡방을 가리키는 고유한 별칭이나 줄임말은 자동 분석으로는 확인되지 않았다.",
+        ),
+      ],
     },
   ]);
 }
-
-const ALIAS_LIMIT = 8;
 
 /** 역사 문단을 나누는 최대 시기 수. 구간(월·주·일)이 더 많으면 이웃한 구간을 묶는다. */
 const MAX_ERAS = 6;

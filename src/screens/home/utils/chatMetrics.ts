@@ -27,6 +27,55 @@ export function classify(raw: string): MsgKind {
   return "text";
 }
 
+/** 말투·활용형이 섞인 낱말. "왔다잖아", "해어떻게"처럼 화제(무엇에 대한 이야기인지)를 알려 주지 못한다. */
+const NON_TOPIC_PART = /잖아|어떻게|는데|거든|던데|했|겠|ㅋ|ㅎ/;
+const NON_TOPIC_ENDING = /(다|요|죠|네|냐|니|게|해|야)$/;
+/** 어느 방에서나 많이 나오는 일반 낱말 */
+const GENERIC_WORDS = new Set([
+  "사람",
+  "사람들",
+  "우리",
+  "오늘",
+  "내일",
+  "어제",
+  "지금",
+  "진짜",
+  "근데",
+  "그냥",
+  "이거",
+  "그거",
+  "저거",
+  "여기",
+  "거기",
+  "아니",
+  "그래",
+  "일단",
+  "나중",
+  "다음",
+  "시간",
+  "생각",
+]);
+
+/**
+ * 화제 후보로 쓸 만한 낱말인지. 형태소 분석이 아니라 어미·일반어를 거르는 정도라,
+ * 결과는 "자주 나온 낱말"로만 보여 주고 실제 화제는 AI가 대화 장면에서 묶는다.
+ */
+export function isTopicWord(word: string): boolean {
+  return (
+    word.length >= 2 &&
+    !GENERIC_WORDS.has(word) &&
+    !NON_TOPIC_PART.test(word) &&
+    !NON_TOPIC_ENDING.test(word)
+  );
+}
+
+/** 해명·소문·정정처럼 앞뒤 대화를 봐야 이해되는 사건의 단서 */
+export const MISUNDERSTAND_CUE =
+  /오해|그게 아니라|그런 뜻(이)? 아니|농담이(야|었)|장난이(야|었)/;
+export const RUMOR_CUE = /카더라|소문|썰 (들었|풀)|들었는데/;
+export const CORRECTION_CUE =
+  /정정|오타|잘못 (말|보냄|보냈|썼)|취소할게|수정할게/;
+
 /**
  * 이 단톡방이나 멤버 집단 전체를 가리키는 표현. 별칭·줄임말 후보를 찾는 데 쓴다.
  * "이방인"처럼 단어 일부가 걸릴 수 있어 후보로만 쓰고, 별칭인지는 AI가 맥락으로 판단한다.

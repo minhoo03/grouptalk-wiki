@@ -27,7 +27,7 @@ import {
 /**
  * 섹션별 Markdown 지시문과 분석 자료를 조립해 Gemini에 서술 문단을 요청한다. 서버 전용.
  *
- * 호출 단위: 브라우저가 문서를 작은 묶음(ROOM_SUBS_PER_JOB, PEOPLE_PER_JOB)으로 나눠
+ * 호출 단위: 브라우저가 문서를 묶음(ROOM_JOB_GROUPS, PEOPLE_PER_JOB)으로 나눠
  * 묶음마다 한 번씩 요청한다. 여기서는 묶음 하나 = Gemini 호출 1회다.
  * 실패한 묶음은 null을 돌려주고, 그 부분은 화면에서 규칙 기반 문장이 남는다.
  */
@@ -39,6 +39,8 @@ const SCENE_TAG_LABEL: Record<NonNullable<Excerpt["tag"]>, string> = {
   opening: "첫 기록",
   closing: "마지막 기록",
   naming: "방 이름",
+  custom: "관행 단서",
+  event: "사건 후보",
 };
 
 /** 연속된 대화 장면. "> 이름: 메시지" 인용은 여기서만 그대로 옮겨 쓸 수 있다. */
@@ -62,7 +64,10 @@ function formatScenes(excerpts: Excerpt[]) {
 }
 
 /** 따로 뽑은 한 줄 발췌 */
-function formatSingles(excerpts: Excerpt[], tag: "naming" | null = null) {
+function formatSingles(
+  excerpts: Excerpt[],
+  tag: "naming" | "custom" | null = null,
+) {
   const singles = excerpts.filter(
     (e) => e.scene === null && (e.tag ?? null) === tag,
   );
@@ -121,6 +126,9 @@ ${formatSingles(request.excerpts)}
 ## 방 이름·방 지칭 발언 (방 이름이나 "우리 방"처럼 방을 가리키는 표현이 나온 메시지. 형식은 한 줄 발췌와 같다)
 ${formatSingles(request.excerpts, "naming")}
 
+## 관행·규칙 단서 발언 (사과·지적·생일·정산·도착 인증·인사처럼 반복되는 관행의 단서가 될 만한 메시지. 형식은 한 줄 발췌와 같다)
+${formatSingles(request.excerpts, "custom")}
+
 # 작성할 섹션
 아래 섹션의 각 하위 문단마다 paragraphs를 쓴다.
 
@@ -137,7 +145,8 @@ const HISTORY_ERA_KEY = /^era\d+$/;
 const ITEM_LIMIT = 12;
 const ITEM_TITLE_LIMIT = 40;
 const ITEM_DATES_LIMIT = 10;
-const ITEM_PARTS_LIMIT = 4;
+/** 방의 성격과 문화의 "주요 대화 주제"는 화제 3~5개를 하위 문단으로 둔다. */
+const ITEM_PARTS_LIMIT = 6;
 const INFO_TEXT_LIMIT = 30;
 const INFO_LIST_LIMIT = 3;
 const TIMELINE_LIMIT = 15;
