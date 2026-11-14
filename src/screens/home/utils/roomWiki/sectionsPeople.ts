@@ -1,6 +1,6 @@
 import type { Rich, WikiSec } from "@/types/wiki";
-import { daysBetween } from "../chatMetrics";
-import type { Ranked } from "../roomInsights";
+import { daysBetween } from "@/screens/home/utils/chatMetrics";
+import type { Ranked } from "@/screens/home/utils/roomInsights";
 import {
   BuildCtx,
   b,
@@ -10,7 +10,7 @@ import {
   p,
   section,
   ul,
-} from "./builder";
+} from "@/screens/home/utils/roomWiki/builder";
 
 export function memberSection(ctx: BuildCtx): WikiSec | null {
   const { ins, room } = ctx;

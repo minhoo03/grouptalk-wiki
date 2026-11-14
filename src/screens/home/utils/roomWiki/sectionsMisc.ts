@@ -9,7 +9,7 @@ import {
   section,
   ul,
   who,
-} from "./builder";
+} from "@/screens/home/utils/roomWiki/builder";
 
 export function triviaSection(ctx: BuildCtx): WikiSec | null {
   const { ins, room } = ctx;

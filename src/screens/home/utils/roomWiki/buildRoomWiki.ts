@@ -6,18 +6,27 @@ import type {
   WikiNote,
   WikiSec,
 } from "@/types/wiki";
-import { computeInsightsSteps } from "../roomInsights";
-import { Steps, runSync, scaled } from "../slicing";
-import { BuildCtx } from "./builder";
+import { computeInsightsSteps } from "@/screens/home/utils/roomInsights";
+import { Steps, runSync, scaled } from "@/screens/home/utils/slicing";
+import { BuildCtx } from "@/screens/home/utils/roomWiki/builder";
 import {
   historySection,
   namingSection,
   overviewSection,
-} from "./sectionsIntro";
-import { cultureSection, slangSection } from "./sectionsCulture";
-import { memberSection } from "./sectionsPeople";
-import { controversySection, episodeSection } from "./sectionsEvents";
-import { relatedSection, triviaSection } from "./sectionsMisc";
+} from "@/screens/home/utils/roomWiki/sectionsIntro";
+import {
+  cultureSection,
+  slangSection,
+} from "@/screens/home/utils/roomWiki/sectionsCulture";
+import { memberSection } from "@/screens/home/utils/roomWiki/sectionsPeople";
+import {
+  controversySection,
+  episodeSection,
+} from "@/screens/home/utils/roomWiki/sectionsEvents";
+import {
+  relatedSection,
+  triviaSection,
+} from "@/screens/home/utils/roomWiki/sectionsMisc";
 
 /**
  * 나무위키 단체 문서의 일반적인 목차 순서를 따른다: 개요 → 명칭 → 역사 → 멤버 → 특징 → 유행어 → 사건 → 여담 → 관련 문서.

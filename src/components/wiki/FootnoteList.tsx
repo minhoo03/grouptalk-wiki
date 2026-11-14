@@ -1,8 +1,8 @@
 "use client";
 
 import { scrollToAnchor } from "@/utils/scrollToAnchor";
-import type { FootnoteEntry } from "./FootnoteContext";
-import { FootnoteLink } from "./FootnoteLink";
+import type { FootnoteEntry } from "@/components/wiki/FootnoteContext";
+import { FootnoteLink } from "@/components/wiki/FootnoteLink";
 
 type FootnoteListProps = {
   notes: FootnoteEntry[];

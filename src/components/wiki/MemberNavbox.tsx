@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import type { PersonProfile } from "@/types/chat";
 import { personPath } from "@/utils/wikiRoutes";
-import { PixelAvatar } from "./PixelAvatar";
+import { PixelAvatar } from "@/components/wiki/PixelAvatar";
 
 type MemberNavboxProps = {
   roomTitle: string;

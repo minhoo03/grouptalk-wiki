@@ -11,21 +11,21 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 
 import { useWikiStore } from "@/store/wikiStore";
 import { ROOM_PATH } from "@/utils/wikiRoutes";
-import { sampleChat, sampleChatFileName } from "../sampleChat";
+import { sampleChat, sampleChatFileName } from "@/screens/home/sampleChat";
 import {
   isChatLoadError,
   processChat,
   type ChatSource,
   type LoadStage,
-} from "../utils/processChat";
-import { isAbortError } from "../utils/slicing";
-import { writeAiProse } from "../utils/aiProse/writeAiProse";
+} from "@/screens/home/utils/processChat";
+import { isAbortError } from "@/screens/home/utils/slicing";
+import { writeAiProse } from "@/screens/home/utils/aiProse/writeAiProse";
 import type {
   ParticipantCandidates,
   ParticipantDecisions,
-} from "../utils/participants";
-import { ParticipantReview } from "./ParticipantReview";
-import { UploadProgress } from "./UploadProgress";
+} from "@/screens/home/utils/participants";
+import { ParticipantReview } from "@/screens/home/components/ParticipantReview";
+import { UploadProgress } from "@/screens/home/components/UploadProgress";
 
 type ProgressState = {
   percent: number;

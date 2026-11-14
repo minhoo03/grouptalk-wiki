@@ -2,7 +2,7 @@ import { DocHeader } from "@/components/wiki/DocHeader";
 import { TableOfContents } from "@/components/wiki/TableOfContents";
 import { WikiNotice } from "@/components/wiki/WikiNotice";
 import { WikiSection } from "@/components/wiki/WikiSection";
-import { ChatUploadPanel } from "./components/ChatUploadPanel";
+import { ChatUploadPanel } from "@/screens/home/components/ChatUploadPanel";
 
 const TOC = [
   { id: "h-1", number: "1", title: "개요" },

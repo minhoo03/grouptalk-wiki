@@ -1,6 +1,6 @@
 import type { Rich, WikiSec } from "@/types/wiki";
 import { formatTime } from "@/utils/format";
-import type { DayStat, TimedMessage } from "../roomInsights";
+import type { DayStat, TimedMessage } from "@/screens/home/utils/roomInsights";
 import {
   BuildCtx,
   at,
@@ -15,7 +15,7 @@ import {
   section,
   ul,
   who,
-} from "./builder";
+} from "@/screens/home/utils/roomWiki/builder";
 
 function spikeDays(days: DayStat[]): { day: DayStat; ratio: number }[] {
   if (days.length < 5) return [];

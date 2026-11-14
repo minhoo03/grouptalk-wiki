@@ -7,7 +7,11 @@ import type {
   WikiSub,
 } from "@/types/wiki";
 import type { RoomProfile } from "@/types/chat";
-import type { Insights, Ranked, TimedMessage } from "../roomInsights";
+import type {
+  Insights,
+  Ranked,
+  TimedMessage,
+} from "@/screens/home/utils/roomInsights";
 import { formatDateKey, formatTime, truncate } from "@/utils/format";
 import { josa } from "@/utils/korean";
 

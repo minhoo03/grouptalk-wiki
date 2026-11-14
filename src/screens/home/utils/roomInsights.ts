@@ -13,7 +13,7 @@ import type {
   TypeKey,
   TypeRank,
   Bucket,
-} from "./insights.types";
+} from "@/screens/home/utils/insights.types";
 import {
   BoundedCounter,
   addDays,
@@ -29,9 +29,9 @@ import {
   longestLaugh,
   toTs,
   tokenize,
-} from "./chatMetrics";
-import { inc, median, rank, top } from "./collections";
-import { Steps, YIELD_MASK, runSync } from "./slicing";
+} from "@/screens/home/utils/chatMetrics";
+import { inc, median, rank, top } from "@/screens/home/utils/collections";
+import { Steps, YIELD_MASK, runSync } from "@/screens/home/utils/slicing";
 
 export type {
   Bucket,
@@ -47,7 +47,7 @@ export type {
   TimedMessage,
   TypeKey,
   TypeRank,
-} from "./insights.types";
+} from "@/screens/home/utils/insights.types";
 
 export const SESSION_GAP = 60;
 const PHRASE_LIMIT = 100000;

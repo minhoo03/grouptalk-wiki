@@ -1,6 +1,6 @@
 import type { Rich, WikiSec } from "@/types/wiki";
 import { josa } from "@/utils/korean";
-import { bucketOf, type Insights } from "../roomInsights";
+import { bucketOf, type Insights } from "@/screens/home/utils/roomInsights";
 import {
   BuildCtx,
   at,
@@ -16,7 +16,7 @@ import {
   section,
   ul,
   who,
-} from "./builder";
+} from "@/screens/home/utils/roomWiki/builder";
 
 export function overviewSection(ctx: BuildCtx): WikiSec | null {
   const { ins, title } = ctx;

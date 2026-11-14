@@ -2,8 +2,8 @@ import { Fragment } from "react";
 
 import type { Rich } from "@/types/wiki";
 import { personPath } from "@/utils/wikiRoutes";
-import { FootnoteRef } from "./FootnoteRef";
-import { WikiLink } from "./WikiLink";
+import { FootnoteRef } from "@/components/wiki/FootnoteRef";
+import { WikiLink } from "@/components/wiki/WikiLink";
 
 type InlineRichProps = {
   content: Rich;

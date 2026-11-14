@@ -4,7 +4,11 @@ import {
   type Excerpt,
 } from "@/services/wikiWriter/wikiWriter.schema";
 import type { ChatMessage } from "@/types/chat";
-import { classify, hasLink, type MsgKind } from "../chatMetrics";
+import {
+  classify,
+  hasLink,
+  type MsgKind,
+} from "@/screens/home/utils/chatMetrics";
 
 /**
  * LLM에 보낼 대화 자료를 고른다. 원본 대화를 통째로 보내지 않기 위한 상한(EXCERPT_LIMIT)이 있다.

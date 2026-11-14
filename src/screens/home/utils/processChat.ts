@@ -1,9 +1,9 @@
 import type { RoomProfile } from "@/types/chat";
 import type { Excerpt } from "@/services/wikiWriter/wikiWriter.schema";
 import type { RoomWiki } from "@/types/wiki";
-import { sampleExcerpts } from "./aiProse/sampleExcerpts";
-import { ChatStreamParser } from "./parseChat";
-import { analyzeChatSteps } from "./analyzeChat";
+import { sampleExcerpts } from "@/screens/home/utils/aiProse/sampleExcerpts";
+import { ChatStreamParser } from "@/screens/home/utils/parseChat";
+import { analyzeChatSteps } from "@/screens/home/utils/analyzeChat";
 import {
   applyParticipantDecisions,
   defaultDecisions,
@@ -11,15 +11,15 @@ import {
   hasCandidates,
   type ParticipantCandidates,
   type ParticipantDecisions,
-} from "./participants";
-import { buildRoomWikiSteps } from "./roomWiki/buildRoomWiki";
-import { readFileChunks } from "./chunkReader";
+} from "@/screens/home/utils/participants";
+import { buildRoomWikiSteps } from "@/screens/home/utils/roomWiki/buildRoomWiki";
+import { readFileChunks } from "@/screens/home/utils/chunkReader";
 import {
   isAbortError,
   runSliced,
   throwIfAborted,
   yieldToMain,
-} from "./slicing";
+} from "@/screens/home/utils/slicing";
 
 export type LoadStage = "read" | "parse" | "analyze" | "build" | "ai" | "done";
 

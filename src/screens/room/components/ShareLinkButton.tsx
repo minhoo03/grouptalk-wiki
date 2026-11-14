@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { useWikiStore } from "@/store/wikiStore";
 import { sharedWikiPath } from "@/utils/wikiRoutes";
-import { createShareLinkAction } from "../createShareLinkAction";
+import { createShareLinkAction } from "@/screens/room/createShareLinkAction";
 
 type ShareStatus =
   | { kind: "idle" }

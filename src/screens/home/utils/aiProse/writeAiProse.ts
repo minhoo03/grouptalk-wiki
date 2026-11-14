@@ -2,9 +2,12 @@ import type { Excerpt } from "@/services/wikiWriter/wikiWriter.schema";
 import type { GeneratedWiki } from "@/store/wikiStore";
 import type { RoomProfile } from "@/types/chat";
 import type { RoomWiki } from "@/types/wiki";
-import { writeWikiProseAction } from "../../writeWikiProseAction";
-import { applyRoomProse, toPersonProse } from "./applyProse";
-import { buildProseRequest } from "./buildProseRequest";
+import { writeWikiProseAction } from "@/screens/home/writeWikiProseAction";
+import {
+  applyRoomProse,
+  toPersonProse,
+} from "@/screens/home/utils/aiProse/applyProse";
+import { buildProseRequest } from "@/screens/home/utils/aiProse/buildProseRequest";
 
 type WriteAiProseInput = {
   room: RoomProfile;

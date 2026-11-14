@@ -1,6 +1,9 @@
-import { generateJson } from "./gemini";
-import { loadPrompts, type DocumentPrompts } from "./prompts";
-import { QuoteVerifier } from "./verifyQuotes";
+import { generateJson } from "@/services/wikiWriter/gemini";
+import {
+  loadPrompts,
+  type DocumentPrompts,
+} from "@/services/wikiWriter/prompts";
+import { QuoteVerifier } from "@/services/wikiWriter/verifyQuotes";
 import {
   personProseResultSchema,
   roomProseResultSchema,
@@ -9,7 +12,7 @@ import {
   type PersonProseResult,
   type RoomProseRequest,
   type RoomProseResult,
-} from "./wikiWriter.schema";
+} from "@/services/wikiWriter/wikiWriter.schema";
 
 /**
  * 섹션별 Markdown 지시문과 분석 자료를 조립해 Gemini에 서술 문단을 요청한다. 서버 전용.

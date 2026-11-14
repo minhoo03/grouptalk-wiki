@@ -1,5 +1,5 @@
 import type { ChatMessage } from "@/types/chat";
-import type { MsgKind } from "./insights.types";
+import type { MsgKind } from "@/screens/home/utils/insights.types";
 
 export type { MsgKind };
 

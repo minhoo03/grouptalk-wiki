@@ -24,7 +24,7 @@ import { WikiSection } from "@/components/wiki/WikiSection";
 import { useWikiStore } from "@/store/wikiStore";
 import { formatDateKey, formatHour } from "@/utils/format";
 import { HOME_PATH, personPath } from "@/utils/wikiRoutes";
-import { ShareLinkButton } from "./components/ShareLinkButton";
+import { ShareLinkButton } from "@/screens/room/components/ShareLinkButton";
 
 const HERO_AVATAR_LIMIT = 8;
 const FOOTNOTE_SECTION_ID = "w-footnotes";

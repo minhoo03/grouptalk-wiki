@@ -11,8 +11,8 @@ import {
 import { createPortal } from "react-dom";
 
 import { scrollToAnchor } from "@/utils/scrollToAnchor";
-import { useFootnote } from "./FootnoteContext";
-import { FootnoteLink } from "./FootnoteLink";
+import { useFootnote } from "@/components/wiki/FootnoteContext";
+import { FootnoteLink } from "@/components/wiki/FootnoteLink";
 
 type TooltipPosition = {
   left: number;

@@ -1,8 +1,8 @@
 import type { Block } from "@/types/wiki";
-import { HourChart } from "./HourChart";
-import { InlineRich } from "./InlineRich";
-import { QuoteBox } from "./QuoteBox";
-import { MIN_BAR_PERCENT } from "./StatBar";
+import { HourChart } from "@/components/wiki/HourChart";
+import { InlineRich } from "@/components/wiki/InlineRich";
+import { QuoteBox } from "@/components/wiki/QuoteBox";
+import { MIN_BAR_PERCENT } from "@/components/wiki/StatBar";
 
 type BlockRendererProps = {
   blocks: Block[];
