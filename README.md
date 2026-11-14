@@ -30,11 +30,11 @@ pnpm dev
 Supabase Dashboard의 Connect 화면에서 프로젝트 URL과 publishable key를 확인해 `.env.local`에 입력한다.
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_URL=
+PUBLISHABLE_KEY=
 ```
 
-두 값은 브라우저에 공개될 수 있다. service role key나 secret key를 `NEXT_PUBLIC_` 변수에 넣지 않는다. 인증·권한은 Supabase RLS와 서버에서 검증한 claims를 기준으로 설계한다.
+두 값은 `NEXT_PUBLIC_`이 없어 서버에서만 읽힌다. 브라우저 Supabase client(`src/lib/supabase/client.ts`)를 쓰게 되면 두 값을 브라우저에 넘길 방법을 따로 정해야 한다. service role key나 secret key를 `NEXT_PUBLIC_` 변수에 넣지 않는다. 인증·권한은 Supabase RLS와 서버에서 검증한 claims를 기준으로 설계한다.
 
 환경변수가 없는 초기 상태에서도 홈 화면과 빌드는 동작한다. Supabase client를 실제로 호출하기 전에는 두 값을 반드시 설정해야 한다.
 

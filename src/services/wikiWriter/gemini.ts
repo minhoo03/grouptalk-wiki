@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Gemini REST API(generateContent) 호출.
  * SDK 없이 fetch로 호출해 의존성을 늘리지 않고, 응답은 Zod로 검증한다.
- * 서버 전용: LLM_API_KEY를 읽는다.
+ * 서버 전용: LLMAPI_KEY를 읽는다.
  */
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -82,7 +82,7 @@ type GenerateJsonOptions<T> = {
 };
 
 export function isLlmConfigured() {
-  return Boolean(process.env.LLM_API_KEY);
+  return Boolean(process.env.LLMAPI_KEY);
 }
 
 function thinkingConfig(model: string) {
@@ -158,8 +158,8 @@ async function generateOnce<T>(
 export async function generateJson<T>(
   options: GenerateJsonOptions<T>,
 ): Promise<T> {
-  const apiKey = process.env.LLM_API_KEY;
-  if (!apiKey) throw new LlmError("LLM_API_KEY 환경변수가 없습니다.", false);
+  const apiKey = process.env.LLMAPI_KEY;
+  if (!apiKey) throw new LlmError("LLMAPI_KEY 환경변수가 없습니다.", false);
 
   const models = [
     ...new Set([process.env.LLM_MODEL || DEFAULT_MODEL, FALLBACK_MODEL]),
