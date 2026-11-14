@@ -22,13 +22,8 @@ const LONGEST_MESSAGE_LIMIT = 300;
  * AI가 문단으로 바꾸면 안 되는 하위 문단(표를 그대로 둔다). 내용은 같은 섹션 첫 하위 문단의 사실로 넘긴다.
  * 개요 > 기본 정보: AI는 표의 일부 칸만 overviewInfo로 채운다.
  * 역사 > 주요 사건 연표: AI는 표의 행을 timeline으로 채운다.
- * 명칭 > 역대 방 이름: 시스템 메시지로 확인한 변경 이력이라 목록을 그대로 둔다.
  */
-const FACTS_ONLY_SUBS = new Set([
-  "overview/info",
-  "history/timeline",
-  "naming/renames",
-]);
+const FACTS_ONLY_SUBS = new Set(["overview/info", "history/timeline"]);
 
 function clip(text: string, limit = FACTS_LIMIT) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;

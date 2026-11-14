@@ -16,7 +16,6 @@ import {
   say,
   section,
   table,
-  ul,
   who,
 } from "@/screens/home/utils/roomWiki/builder";
 
@@ -230,28 +229,6 @@ export function namingSection(ctx: BuildCtx): WikiSec | null {
         }
         return blocks;
       },
-    },
-    {
-      key: "renames",
-      title: "역대 방 이름",
-      build: () =>
-        ins.renames.length
-          ? [
-              p("대화 기록에 남은 방 이름 변경 내역은 다음과 같다."),
-              ul([
-                ...ins.renames.map((r): Rich => [
-                  `${day(r.dateKey)}: `,
-                  b(r.name),
-                  ` (${r.author} 변경)`,
-                ]),
-                [b(title), muted(" (현재)")],
-              ]),
-            ]
-          : [
-              p(
-                "기록 기간 내 방 이름이 변경된 이력은 확인되지 않으며, 단일 명칭으로 쭉 유지되어 왔다.",
-              ),
-            ],
     },
     {
       key: "aliases",
