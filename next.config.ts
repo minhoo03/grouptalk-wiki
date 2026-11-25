@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     "/**/*": ["./src/services/wikiWriter/prompts/**/*.md"],
   },
   experimental: {
+    agentUpgrade: "security",
     serverActions: {
       // 공유 링크 생성 시 분석된 문서 JSON을 보낸다. 기본 1MB로는 큰 단톡방이 잘린다.
       bodySizeLimit: "5mb",
