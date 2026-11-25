@@ -1,4 +1,4 @@
-import type { ChatMessage, ParsedChat } from "@/types/chat";
+import type { ChatMessage, MemberEvent, ParsedChat } from "@/types/chat";
 
 const TITLE = /^(.+?)\s*(?:님과)?\s*카카오톡\s*대화/;
 const PC_DATE = /^-{3,}\s*(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일.*$/;
@@ -7,6 +7,54 @@ const MOBILE_MSG =
   /^(\d{4})[.년-]\s*(\d{1,2})[.월-]\s*(\d{1,2})[.일]?\s*(?:(오전|오후)\s*)?(\d{1,2}):(\d{2}),\s*(.+?)\s:\s(.*)$/;
 const MOBILE_DATE = /^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일(?:\s*\S+요일)?\s*$/;
 const MOBILE_SYSTEM = /^(\d{4})[.년-]\s*(\d{1,2})[.월-]\s*(\d{1,2})/;
+/** 모바일 내보내기의 시스템 줄 앞부분("2024. 1. 5. 오후 3:12: ") */
+const MOBILE_SYSTEM_PREFIX =
+  /^\d{4}[.년-]\s*\d{1,2}[.월-]\s*\d{1,2}[.일]?\s*(?:(?:오전|오후)\s*)?\d{1,2}:\d{2}[:,]?\s*/;
+const JOIN_EVENT = /^(.+?)님이 들어왔습니다\.?$/;
+const LEAVE_EVENT = /^(.+?)님이 나갔습니다\.?$/;
+const INVITE_EVENT = /^(.+?)님이 (.+?)님을 초대했습니다\.?$/;
+const KICK_EVENT = /^(?:(.+?)님이 )?(.+?)님을 내보냈습니다\.?$/;
+const RENAME_EVENT =
+  /^(?:(.+?)님이 )?(?:채팅)?방\s?이름을\s?['"“]?(.+?)['"”]?\s?(?:으로|로)\s?변경했습니다\.?$/;
+/** 초대 메시지의 여러 사람("B님, C님과 D님") */
+const INVITEE_SPLIT = /님(?:,\s*|과\s*|와\s*|\s+)/;
+
+/** 시스템 메시지 한 줄을 구성원 변동으로 읽는다. 해당하지 않으면 빈 배열. */
+export function readMemberEvents(
+  text: string,
+  dateKey: string | null,
+  messageIndex: number,
+): MemberEvent[] {
+  const line = text.trim();
+  const event = (
+    type: MemberEvent["type"],
+    name: string,
+    actor: string | null = null,
+  ): MemberEvent => ({
+    type,
+    name: name.trim(),
+    actor: actor?.trim() || null,
+    dateKey,
+    messageIndex,
+  });
+  const invite = line.match(INVITE_EVENT);
+  if (invite)
+    return invite[2]
+      .split(INVITEE_SPLIT)
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .map((name) => event("join", name, invite[1]));
+  const join = line.match(JOIN_EVENT);
+  if (join) return [event("join", join[1])];
+  const leave = line.match(LEAVE_EVENT);
+  if (leave) return [event("leave", leave[1])];
+  const kick = line.match(KICK_EVENT);
+  if (kick) return [event("kick", kick[2], kick[1] ?? null)];
+  const rename = line.match(RENAME_EVENT);
+  if (rename) return [event("rename", rename[2], rename[1] ?? null)];
+  return [];
+}
+
 const CSV_DATE =
   /(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})[^\d]*?(?:(오전|오후|AM|PM)\s*)?(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?/i;
 
@@ -76,6 +124,7 @@ export class ChatStreamParser {
       return {
         roomTitle: cleanTitle("", this.fileName),
         messages: this.csv.messages,
+        events: this.csv.events,
       };
     }
     if (this.lineBuffer) this.txt.line(stripCr(this.lineBuffer));
@@ -83,6 +132,7 @@ export class ChatStreamParser {
     return {
       roomTitle: cleanTitle(this.txt.roomTitle, this.fileName),
       messages: this.txt.messages,
+      events: this.txt.events,
     };
   }
 
@@ -117,6 +167,7 @@ function stripCr(line: string): string {
 
 class TxtLineParser {
   messages: ChatMessage[] = [];
+  events: MemberEvent[] = [];
   roomTitle = "";
   private index = 0;
   private currentDate: string | null = null;
@@ -185,7 +236,27 @@ class TxtLineParser {
     }
 
     const system = line.match(MOBILE_SYSTEM);
-    if (system && toKey(system[1], system[2], system[3])) {
+    const systemKey = system ? toKey(system[1], system[2], system[3]) : null;
+    if (systemKey) {
+      this.events.push(
+        ...readMemberEvents(
+          line.replace(MOBILE_SYSTEM_PREFIX, ""),
+          systemKey,
+          this.messages.length,
+        ),
+      );
+      this.last = null;
+      return;
+    }
+
+    // PC 내보내기의 시스템 메시지는 날짜·이름 없이 한 줄로 온다. 앞 메시지에 이어 붙이지 않는다.
+    const pcEvents = readMemberEvents(
+      line,
+      this.currentDate,
+      this.messages.length,
+    );
+    if (pcEvents.length) {
+      this.events.push(...pcEvents);
       this.last = null;
       return;
     }
@@ -283,6 +354,7 @@ class CsvRowParser {
 
 class CsvChatBuilder {
   messages: ChatMessage[] = [];
+  events: MemberEvent[] = [];
   private headerChecked = false;
   private dateCol = 0;
   private userCol = 1;
@@ -309,10 +381,17 @@ class CsvChatBuilder {
     }
     const author = (row[this.userCol] ?? "").trim();
     const body = (row[this.msgCol] ?? "").replace(/\r/g, "");
-    if (!author || !body.trim()) return;
+    if (!body.trim()) return;
     const d = (row[this.dateCol] ?? "").match(CSV_DATE);
     const ampm = d ? normalizeAmPm(d[4] ?? d[7]) : undefined;
     const dateKey = d ? toKey(d[1], d[2], d[3]) : null;
+    // 시스템 메시지(입장·퇴장 등)는 보낸 사람 칸이 비어 있거나 시스템 문장 그대로 온다.
+    const events = readMemberEvents(body, dateKey, this.messages.length);
+    if (events.length) {
+      this.events.push(...events);
+      return;
+    }
+    if (!author) return;
     const hour = d && dateKey ? to24(Number(d[5]), ampm) : null;
     const minute = d && hour !== null ? toMinute(d[6]) : null;
     this.messages.push({
