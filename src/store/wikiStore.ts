@@ -10,6 +10,8 @@ export type GeneratedWiki = {
   personProse: PersonProse;
   /** 서술 일부라도 AI가 썼는지 */
   aiWritten: boolean;
+  /** AI 서술을 요청했지만 실패해 통계로만 작성된 인물 문서 */
+  aiMissingPeople: string[];
 };
 
 type WikiStore = {

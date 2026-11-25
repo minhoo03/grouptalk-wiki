@@ -6,7 +6,9 @@ import type {
   WikiSec,
   WikiSub,
 } from "@/types/wiki";
-import type { RoomProfile } from "@/types/chat";
+import type { MemberEvent, RoomProfile } from "@/types/chat";
+import type { MemberInsights } from "@/screens/home/utils/memberInsights";
+import type { SlangInsights } from "@/screens/home/utils/slangInsights";
 import type {
   Insights,
   Ranked,
@@ -24,6 +26,12 @@ export interface BotSummary {
 export interface BuildCtx {
   room: RoomProfile;
   ins: Insights;
+  /** 멤버 섹션 통계(상태·역할 지표·친밀도·인원 변천) */
+  people: MemberInsights;
+  /** 상징·유행어 섹션 통계(후보·말버릇·웃음·이모지·호칭) */
+  slang: SlangInsights;
+  /** 시스템 메시지의 입장·퇴장·방 이름 변경. 봇은 빠져 있다. */
+  events: MemberEvent[];
   title: string;
   bots: BotSummary;
   omitted: string[];
@@ -74,10 +82,17 @@ export const word = (w: string, pair: JosaPair): string =>
 
 export const p = (...content: Inline[]): Block => ({ type: "p", content });
 export const ul = (items: Rich[]): Block => ({ type: "list", items });
-export const table = (head: string[], rows: Rich[][]): Block => ({
+export const table = (head: string[], rows: Rich[][], fold?: string): Block => ({
   type: "table",
   head,
   rows,
+  ...(fold && { fold }),
+});
+export const h = (text: string): Block => ({ type: "h", text });
+/** AI에게만 보내는 계산값. 화면에는 나오지 않는다. */
+export const facts = (...lines: (string | false | null | undefined)[]): Block => ({
+  type: "facts",
+  text: lines.filter(Boolean).join("\n"),
 });
 export const quote = (q: string, caption: Rich): Block => ({
   type: "quote",
@@ -128,9 +143,11 @@ export function dialogueAround(
   index: number,
   before = 3,
   after = 4,
+  fold?: string,
 ): Block {
   return {
     type: "dialogue",
+    ...(fold && { fold }),
     lines: ins.timed
       .slice(Math.max(0, index - before), index + after + 1)
       .map((m) => ({ author: m.author, text: truncate(m.text, 80) })),

@@ -13,6 +13,8 @@ import {
   type OverviewInfo,
   type ProseJobResult,
   type TimelineEvent,
+  AI_PARTS_SUBS,
+  AI_TABLE_SUBS,
   HALL_OF_FAME_KEY,
   isItemSection,
   personProseResultSchema,
@@ -34,14 +36,23 @@ import {
 
 const PERSON_EXCERPT_LIMIT = 40;
 
-/** 장면 표시. naming은 한 줄 발췌에만 붙으므로 장면 제목에는 쓰지 않는다. */
+/** 장면 표시. naming·custom·slang·address·emoji는 한 줄 발췌에만 붙으므로 장면 제목에는 쓰지 않는다. */
 const SCENE_TAG_LABEL: Record<NonNullable<Excerpt["tag"]>, string> = {
   opening: "첫 기록",
   closing: "마지막 기록",
   naming: "방 이름",
   custom: "관행 단서",
   event: "사건 후보",
+  pair: "두 사람 대화",
+  origin: "유행어 첫 등장",
+  lastUse: "유행어 마지막 사용",
+  laugh: "최장 웃음",
+  slang: "유행어 사용",
+  address: "호칭",
+  emoji: "이모지",
 };
+
+type SingleTag = "naming" | "custom" | "slang" | "address" | "emoji";
 
 /** 연속된 대화 장면. "> 이름: 메시지" 인용은 여기서만 그대로 옮겨 쓸 수 있다. */
 function formatScenes(excerpts: Excerpt[]) {
@@ -63,17 +74,32 @@ function formatScenes(excerpts: Excerpt[]) {
     .join("\n\n");
 }
 
-/** 따로 뽑은 한 줄 발췌 */
-function formatSingles(
-  excerpts: Excerpt[],
-  tag: "naming" | "custom" | null = null,
-) {
+/**
+ * 따로 뽑은 한 줄 발췌. 토큰을 줄이려고 말한 사람별로 묶어 이름을 한 번만 쓴다.
+ * 사람 안에서는 시간순이고, 같은 날 발언은 날짜를 한 번만 쓴다.
+ */
+function formatSingles(excerpts: Excerpt[], tag: SingleTag | null = null) {
   const singles = excerpts.filter(
     (e) => e.scene === null && (e.tag ?? null) === tag,
   );
   if (!singles.length) return "(발췌 없음)";
-  return singles
-    .map((e) => `- [${e.date ?? "날짜 미상"}] ${e.author}: ${e.text}`)
+  const byAuthor = new Map<string, Excerpt[]>();
+  for (const e of singles) {
+    const list = byAuthor.get(e.author) ?? [];
+    list.push(e);
+    byAuthor.set(e.author, list);
+  }
+  return [...byAuthor.entries()]
+    .map(([author, list]) => {
+      const lines: string[] = [];
+      let lastDate: string | null | undefined;
+      for (const e of list) {
+        if (e.date !== lastDate) lines.push(`[${e.date ?? "날짜 미상"}]`);
+        lines.push(`- ${e.text}`);
+        lastDate = e.date;
+      }
+      return `@${author}\n${lines.join("\n")}`;
+    })
     .join("\n");
 }
 
@@ -105,7 +131,7 @@ function roomPrompt(
       const subs = section.subs
         .map(
           (sub) =>
-            `### 하위 문단 \`${sub.key}\` — ${sub.title}\n사실:\n${sub.facts}`,
+            `### 하위 문단 \`${sub.key}\` — ${sub.title}${subFormatNote(section.key, sub.key)}\n사실:\n${sub.facts}`,
         )
         .join("\n\n");
       return `## 섹션 \`${section.key}\` — ${section.title}\n\n지시:\n${prompts.sections.get(section.key)}\n\n${subs}`;
@@ -120,7 +146,7 @@ ${formatMembers(request.members)}
 ## 대화 장면 (원본에서 연속된 메시지. 장면 인용은 여기서만 그대로 옮긴다)
 ${formatScenes(request.excerpts)}
 
-## 한 줄 발췌 (형식: [날짜] 이름: 내용)
+## 한 줄 발췌 (형식: "@이름" 줄 아래에 그 사람의 발언이 시간순으로 있다. "[YYYY-MM-DD]" 줄은 그 아래 발언들의 날짜다. 각주에는 이 이름과 날짜를 쓴다)
 ${formatSingles(request.excerpts)}
 
 ## 방 이름·방 지칭 발언 (방 이름이나 "우리 방"처럼 방을 가리키는 표현이 나온 메시지. 형식은 한 줄 발췌와 같다)
@@ -129,10 +155,50 @@ ${formatSingles(request.excerpts, "naming")}
 ## 관행·규칙 단서 발언 (사과·지적·생일·정산·도착 인증·인사처럼 반복되는 관행의 단서가 될 만한 메시지. 형식은 한 줄 발췌와 같다)
 ${formatSingles(request.excerpts, "custom")}
 
+## 유행어 사용 발언 (유행어 후보 표현이 실제로 쓰인 메시지. 형식은 한 줄 발췌와 같다)
+${formatSingles(request.excerpts, "slang")}
+
+## 호칭 발언 (서로를 부르거나 가리킨 표현이 나온 메시지. 형식은 한 줄 발췌와 같다)
+${formatSingles(request.excerpts, "address")}
+
+## 이모지 발언 (많이 쓰인 이모지가 나온 메시지. 형식은 한 줄 발췌와 같다)
+${formatSingles(request.excerpts, "emoji")}
+${formatCovered(request.covered)}
 # 작성할 섹션
 아래 섹션의 각 하위 문단마다 paragraphs를 쓴다.
 
 ${sectionText}`;
+}
+
+/** 앞 묶음이 이미 다룬 이야기. 없으면 아무것도 넣지 않는다. */
+function formatCovered(covered: string[] | undefined) {
+  if (!covered?.length) return "";
+  return `
+## 이미 다른 섹션에서 다룬 이야기 (다시 풀어 쓰지 않는다)
+아래 사건·인용은 문서의 다른 섹션이 이미 자세히 썼다. 같은 일화를 다시 설명하거나 같은 발언을 다시 인용하지 않는다. 꼭 필요하면 한 구절로만 언급한다.
+${covered.map((line) => `- ${line}`).join("\n")}
+`;
+}
+
+/** 표 칸(rows)·소제목(parts)으로 답하는 하위 문단에 응답 형식을 덧붙인다. */
+function subFormatNote(sectionKey: string, subKey: string) {
+  const key = `${sectionKey}/${subKey}`;
+  const notes: string[] = [];
+  const table = AI_TABLE_SUBS[key];
+  if (table?.head)
+    notes.push(
+      `응답 rows: 표 전체를 새로 만든다. 행 하나 = [${table.head.join(", ")}]`,
+    );
+  else if (table) {
+    const cells = table.columns.map((c) => `${c + 1}번째 칸`).join(", ");
+    notes.push(
+      `응답 rows: 사실의 표에서 고른 행마다 [첫 칸 그대로${cells ? `, ${cells}` : ""}]` +
+        (table.keepOnlyFilled ? ". rows에 넣지 않은 행은 표에서 빠진다" : ""),
+    );
+  }
+  if (AI_PARTS_SUBS.has(key))
+    notes.push("응답 parts: 소제목마다 { title, paragraphs }");
+  return notes.map((note) => `\n${note}`).join("");
 }
 
 /**
@@ -147,6 +213,10 @@ const ITEM_TITLE_LIMIT = 40;
 const ITEM_DATES_LIMIT = 10;
 /** 방의 성격과 문화의 "주요 대화 주제"는 화제 3~5개를 하위 문단으로 둔다. */
 const ITEM_PARTS_LIMIT = 6;
+/** 멤버별·쌍별 소제목(AI_PARTS_SUBS). 멤버 수만큼 생길 수 있다. */
+const SUB_PARTS_LIMIT = 20;
+const TABLE_ROWS_LIMIT = 20;
+const TABLE_CELL_LIMIT = 200;
 const INFO_TEXT_LIMIT = 30;
 const INFO_LIST_LIMIT = 3;
 const TIMELINE_LIMIT = 15;
@@ -225,6 +295,10 @@ function roomJsonSchema(sections: RoomProseRequest["sections"]) {
                     },
                   },
                   paragraphs: { type: "array", items: { type: "string" } },
+                  rows: {
+                    type: "array",
+                    items: { type: "array", items: { type: "string" } },
+                  },
                 },
                 required: ["key", "paragraphs"],
               },
@@ -287,7 +361,44 @@ function sanitizeItems(subs: RoomSub[], verifier: QuoteVerifier): RoomSub[] {
     .map((item, index) => ({ ...item, key: `item${index + 1}` }));
 }
 
-/** 요청한 하위 문단만 남기고, 제목은 AI가 정하는 하위 문단(hasAiTitle)에서만 받는다. */
+/** 표 칸. 한 줄로 만들고 각주는 발췌와 대조한다. 행 길이는 표 규격(AI_TABLE_SUBS)에 맞춘다. */
+function sanitizeRows(
+  key: string,
+  rows: string[][] | undefined,
+  verifier: QuoteVerifier,
+): string[][] | undefined {
+  const spec = AI_TABLE_SUBS[key];
+  if (!spec || !rows?.length) return undefined;
+  const width = spec.head ? spec.head.length : spec.columns.length + 1;
+  const cleaned = rows
+    .map((row) =>
+      Array.from({ length: width }, (_, i) => {
+        const text = (row[i] ?? "").replace(/\s+/g, " ").trim();
+        const verified = text ? (verifier.verifyParagraph(text) ?? "") : "";
+        return verified.length > TABLE_CELL_LIMIT
+          ? `${verified.slice(0, TABLE_CELL_LIMIT)}…`
+          : verified;
+      }),
+    )
+    .filter((row) => row[0])
+    .slice(0, TABLE_ROWS_LIMIT);
+  return cleaned.length ? cleaned : undefined;
+}
+
+function sanitizeParts(parts: RoomSub["parts"], verifier: QuoteVerifier) {
+  return (parts ?? [])
+    .flatMap((part) => {
+      const title = cleanCell(part.title, ITEM_TITLE_LIMIT);
+      const paragraphs = verifier.verifyParagraphs(part.paragraphs);
+      return title && paragraphs.length ? [{ title, paragraphs }] : [];
+    })
+    .slice(0, SUB_PARTS_LIMIT);
+}
+
+/**
+ * 요청한 하위 문단만 남기고, 제목은 AI가 정하는 하위 문단(hasAiTitle)에서만 받는다.
+ * 표 칸(rows)과 소제목(parts)은 그 형식을 쓰는 하위 문단(AI_TABLE_SUBS, AI_PARTS_SUBS)에서만 받는다.
+ */
 function sanitizeSubs(
   sectionKey: string,
   subs: RoomSub[],
@@ -297,13 +408,20 @@ function sanitizeSubs(
   return subs
     .filter((sub) => allowedKeys?.has(sub.key))
     .map((sub) => {
+      const key = `${sectionKey}/${sub.key}`;
       const title =
         hasAiTitle(sectionKey, sub.key) && sub.title
           ? cleanCell(sub.title, ITEM_TITLE_LIMIT)
           : "";
+      const rows = sanitizeRows(key, sub.rows, verifier);
+      const parts = AI_PARTS_SUBS.has(key)
+        ? sanitizeParts(sub.parts, verifier)
+        : [];
       return {
         key: sub.key,
         ...(title && { title }),
+        ...(rows && { rows }),
+        ...(parts.length && { parts }),
         paragraphs: verifier.verifyParagraphs(sub.paragraphs),
       };
     });

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Block } from "@/types/wiki";
 import { HourChart } from "@/components/wiki/HourChart";
 import { InlineRich } from "@/components/wiki/InlineRich";
@@ -7,6 +8,19 @@ import { MIN_BAR_PERCENT } from "@/components/wiki/StatBar";
 type BlockRendererProps = {
   blocks: Block[];
 };
+
+/** 나무위키 접기({{{#!folding}}}). label이 없으면 그대로 펼쳐 둔다. */
+function Fold({ label, children }: { label?: string; children: ReactNode }) {
+  if (!label) return <>{children}</>;
+  return (
+    <details className="group rounded-[6px] border border-line">
+      <summary className="cursor-pointer px-3 py-2 text-sm font-bold text-namu select-none">
+        {label}
+      </summary>
+      <div className="p-3 pt-0">{children}</div>
+    </details>
+  );
+}
 
 export function BlockRenderer({ blocks }: BlockRendererProps) {
   return (
@@ -29,42 +43,56 @@ export function BlockRenderer({ blocks }: BlockRendererProps) {
                 ))}
               </ul>
             );
+          case "facts":
+            // AI 입력용 계산값. 화면에는 그리지 않는다.
+            return null;
+          case "fold":
+            return (
+              <Fold key={index} label={block.label}>
+                <BlockRenderer blocks={block.blocks} />
+              </Fold>
+            );
+          case "h":
+            return (
+              <h4 key={index} className="pt-2 text-base font-bold">
+                {block.text}
+              </h4>
+            );
           case "table":
             return (
-              <div
-                key={index}
-                className="overflow-x-auto rounded-[6px] border-2 border-ink"
-              >
-                <table className="w-full min-w-[420px] text-left text-sm">
-                  <thead className="bg-namu text-white">
-                    <tr>
-                      {block.head.map((heading, headingIndex) => (
-                        <th
-                          key={headingIndex}
-                          scope="col"
-                          className="px-3 py-2.5 font-bold whitespace-nowrap"
-                        >
-                          {heading}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {block.rows.map((row, rowIndex) => (
-                      <tr key={rowIndex} className="border-t border-line">
-                        {row.map((cell, cellIndex) => (
-                          <td
-                            key={cellIndex}
-                            className="px-3 py-2.5 align-top text-ink"
+              <Fold key={index} label={block.fold}>
+                <div className="overflow-x-auto rounded-[6px] border-2 border-ink">
+                  <table className="w-full min-w-[420px] text-left text-sm">
+                    <thead className="bg-namu text-white">
+                      <tr>
+                        {block.head.map((heading, headingIndex) => (
+                          <th
+                            key={headingIndex}
+                            scope="col"
+                            className="px-3 py-2.5 font-bold whitespace-nowrap"
                           >
-                            <InlineRich content={cell} />
-                          </td>
+                            {heading}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {block.rows.map((row, rowIndex) => (
+                        <tr key={rowIndex} className="border-t border-line">
+                          {row.map((cell, cellIndex) => (
+                            <td
+                              key={cellIndex}
+                              className="px-3 py-2.5 align-top text-ink"
+                            >
+                              <InlineRich content={cell} />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Fold>
             );
           case "bars":
             return (
@@ -106,18 +134,17 @@ export function BlockRenderer({ blocks }: BlockRendererProps) {
             );
           case "dialogue":
             return (
-              <blockquote
-                key={index}
-                className="space-y-1 border-l-4 border-namu bg-paper px-4 py-3 text-[15px]"
-              >
-                {block.lines.map((line, lineIndex) => (
-                  <p key={lineIndex} className="whitespace-pre-line">
-                    <span className="font-bold">{line.author}</span>
-                    <span className="text-subtle">: </span>
-                    {line.text}
-                  </p>
-                ))}
-              </blockquote>
+              <Fold key={index} label={block.fold}>
+                <blockquote className="space-y-1 border-l-4 border-namu bg-paper px-4 py-3 text-[15px]">
+                  {block.lines.map((line, lineIndex) => (
+                    <p key={lineIndex} className="whitespace-pre-line">
+                      <span className="font-bold">{line.author}</span>
+                      <span className="text-subtle">: </span>
+                      {line.text}
+                    </p>
+                  ))}
+                </blockquote>
+              </Fold>
             );
         }
       })}

@@ -1,4 +1,4 @@
-import type { ChatMessage, RoomProfile } from "@/types/chat";
+import type { ChatMessage, MemberEvent, RoomProfile } from "@/types/chat";
 import type {
   NoteRef,
   NumberedSec,
@@ -6,7 +6,17 @@ import type {
   WikiNote,
   WikiSec,
 } from "@/types/wiki";
-import { computeInsightsSteps } from "@/screens/home/utils/roomInsights";
+import {
+  computeInsightsSteps,
+  type Insights,
+} from "@/screens/home/utils/roomInsights";
+import { computeMemberSteps } from "@/screens/home/utils/memberInsights";
+import {
+  computeSlangSteps,
+  type SlangInsights,
+} from "@/screens/home/utils/slangInsights";
+import type { MemberInsights } from "@/screens/home/utils/memberInsights";
+import type { ExcerptFocus } from "@/screens/home/utils/aiProse/sampleExcerpts";
 import { Steps, runSync, scaled } from "@/screens/home/utils/slicing";
 import {
   BuildCtx,
@@ -17,10 +27,8 @@ import {
   namingSection,
   overviewSection,
 } from "@/screens/home/utils/roomWiki/sectionsIntro";
-import {
-  cultureSection,
-  slangSection,
-} from "@/screens/home/utils/roomWiki/sectionsCulture";
+import { cultureSection } from "@/screens/home/utils/roomWiki/sectionsCulture";
+import { slangSection } from "@/screens/home/utils/roomWiki/sectionsSlang";
 import {
   hallOfFameSection,
   memberSection,
@@ -53,25 +61,89 @@ const MAIN_SECTIONS = [
 
 const NO_BOTS: BotSummary = { excluded: [], kept: [] };
 
+export type BuiltRoomWiki = {
+  wiki: RoomWiki;
+  /** AI 서술에 보낼 발췌를 고를 때 함께 볼 대화(멤버·유행어 섹션의 근거) */
+  focus: ExcerptFocus;
+};
+
 export function buildRoomWiki(
   room: RoomProfile,
   messages: ChatMessage[],
   bots: BotSummary = NO_BOTS,
-): RoomWiki {
-  return runSync(buildRoomWikiSteps(room, messages, bots));
+  events: MemberEvent[] = [],
+): BuiltRoomWiki {
+  return runSync(buildRoomWikiSteps(room, messages, bots, events));
+}
+
+/** 방 이름 변경: 메시지 본문에서 찾은 것과 시스템 메시지에서 읽은 것을 합친다. */
+function mergeRenames(ins: Insights, events: MemberEvent[]): Insights {
+  const fromEvents = events
+    .filter((e) => e.type === "rename")
+    .map((e) => ({ name: e.name, dateKey: e.dateKey, author: e.actor ?? "" }));
+  if (!fromEvents.length) return ins;
+  const seen = new Set<string>();
+  const renames = [...ins.renames, ...fromEvents]
+    .sort((a, b) => (a.dateKey ?? "").localeCompare(b.dateKey ?? ""))
+    .filter((r) => {
+      const key = `${r.dateKey}|${r.name}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return { ...ins, renames };
+}
+
+const FOCUS_SLANG_TEXTS = 15;
+const FOCUS_ORIGINS = 4;
+const FOCUS_LAST_USES = 3;
+const FOCUS_PAIRS = 3;
+
+function excerptFocus(
+  ins: Insights,
+  people: MemberInsights,
+  slang: SlangInsights,
+): ExcerptFocus {
+  const spread = slang.candidates.filter((c) => c.users.length >= 2);
+  return {
+    pairs: [...people.pairs.slice(0, FOCUS_PAIRS), ...people.unexpected].map(
+      (p): [string, string] => [p.a, p.b],
+    ),
+    slangTexts: slang.candidates.slice(0, FOCUS_SLANG_TEXTS).map((c) => c.text),
+    originIndexes: spread.slice(0, FOCUS_ORIGINS).map((c) => c.first.idx),
+    lastUseIndexes: slang.candidates
+      .filter((c) => slang.vanishedKeys.has(c.text))
+      .slice(0, FOCUS_LAST_USES)
+      .map((c) => c.last.idx),
+    laughIndex: ins.longestLaugh?.msg.idx ?? null,
+    emojis: slang.emoji.map((e) => e.emoji),
+    addressTerms: slang.address.map((a) => a.term),
+  };
 }
 
 export function* buildRoomWikiSteps(
   room: RoomProfile,
   messages: ChatMessage[],
   bots: BotSummary = NO_BOTS,
-): Steps<RoomWiki> {
-  const ins = yield* scaled(computeInsightsSteps(messages), 0, 0.95);
+  events: MemberEvent[] = [],
+): Steps<BuiltRoomWiki> {
+  const baseIns = yield* scaled(computeInsightsSteps(messages), 0, 0.75);
+  const ins = mergeRenames(baseIns, events);
+  const slang = yield* scaled(computeSlangSteps(ins), 0.75, 0.87);
+  const peakHours = new Map(room.participants.map((p) => [p.name, p.peakHour]));
+  const people = yield* scaled(
+    computeMemberSteps(ins, events, peakHours),
+    0.87,
+    0.95,
+  );
 
   const notes: { text: string; ref?: NoteRef }[] = [];
   const ctx: BuildCtx = {
     room,
     ins,
+    people,
+    slang,
+    events,
     title: room.roomTitle,
     bots,
     omitted: [],
@@ -123,5 +195,8 @@ export function* buildRoomWikiSteps(
   });
 
   yield 1;
-  return { sections, notes: resolved };
+  return {
+    wiki: { sections, notes: resolved },
+    focus: excerptFocus(ins, people, slang),
+  };
 }

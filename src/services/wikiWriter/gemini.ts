@@ -11,8 +11,12 @@ import type { PreferredModel } from "@/services/wikiWriter/wikiWriter.schema";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 /** 2026-11 기준 이 키로 안정적으로 응답한 모델. LLM_MODEL로 바꿀 수 있다. */
 const DEFAULT_MODEL = "gemini-3.5-flash";
-/** 기본 모델이 혼잡(503)·한도 초과(429)·시간 초과일 때 한 번 더 시도할 모델 */
-const FALLBACK_MODEL = "gemini-2.5-flash";
+/**
+ * 기본 모델이 혼잡(503)·한도 초과(429)·시간 초과일 때 한 번 더 시도할 모델. LLM_FALLBACK_MODEL로 바꿀 수 있다.
+ * 2026-11 Gemini가 gemini-2.5-flash에 404를 돌려주며 이 모델을 안내했다. 이 키로 응답한 적은 아직 없다.
+ * 없는 모델이어도(404) 그 모델만 빼고 기본 모델로 계속한다.
+ */
+const FALLBACK_MODEL = "gemini-3.8-flash";
 /**
  * 하루 요청 수를 아끼려고 묶음을 크게 보내므로(ROOM_JOB_GROUPS, PEOPLE_PER_JOB) 응답 하나가 1~2분 걸린다.
  * 초당 약 100토큰 기준으로 1만 토큰 이상 받을 수 있는 시간이다.
@@ -42,6 +46,8 @@ export class LlmError extends Error {
      * 몇 시간 뒤에야 풀리므로 같은 모델을 다시 부르지 않는다.
      */
     readonly dailyQuotaExhausted = false,
+    /** 모델이 없거나 이 키로 쓸 수 없다(404). 다른 모델로만 다시 시도한다. */
+    readonly modelUnavailable = false,
   ) {
     super(message);
     this.name = "LlmError";
@@ -66,6 +72,16 @@ const responseSchema = z.object({
       }),
     )
     .min(1),
+  /** 실제로 쓴 토큰 수. 토큰 절감 효과를 로그로 확인하는 데 쓴다. */
+  usageMetadata: z
+    .object({
+      promptTokenCount: z.number().optional(),
+      candidatesTokenCount: z.number().optional(),
+      thoughtsTokenCount: z.number().optional(),
+      totalTokenCount: z.number().optional(),
+    })
+    .loose()
+    .optional(),
 });
 
 const errorSchema = z.object({
@@ -108,6 +124,9 @@ function isDailyQuota(
   );
 }
 
+/** 404를 받은 모델. 서버 프로세스가 살아 있는 동안 다시 부르지 않는다. */
+const unavailableModels = new Set<string>();
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type GenerateJsonOptions<T> = {
@@ -141,7 +160,7 @@ async function generateOnce<T>(
   let response: Response;
   const startedAt = Date.now();
   console.info(
-    `[단톡위키] Gemini 요청 시작: ${model} (timeout ${timeoutMs}ms, prompt ${prompt.length}자)`,
+    `[단톡위키] Gemini 요청 시작: ${model} (timeout ${timeoutMs}ms, system ${system.length}자, prompt ${prompt.length}자)`,
   );
   try {
     response = await fetch(`${API_BASE}/${model}:generateContent`, {
@@ -200,10 +219,17 @@ async function generateOnce<T>(
       RETRYABLE_STATUS.has(response.status) && !daily,
       parseRetryDelayMs(details),
       daily,
+      response.status === 404,
     );
   }
 
-  const candidate = responseSchema.parse(body).candidates[0];
+  const parsed = responseSchema.parse(body);
+  const usage = parsed.usageMetadata;
+  if (usage)
+    console.info(
+      `[단톡위키] Gemini 토큰: ${model} 입력 ${usage.promptTokenCount ?? "?"} · 출력 ${usage.candidatesTokenCount ?? "?"} · 생각 ${usage.thoughtsTokenCount ?? 0} · 합계 ${usage.totalTokenCount ?? "?"}`,
+    );
+  const candidate = parsed.candidates[0];
   if (candidate.finishReason !== "STOP") {
     throw new LlmError(
       `${model} 응답이 완료되지 않았습니다: ${candidate.finishReason ?? "unknown"}`,
@@ -230,17 +256,23 @@ export async function generateJson<T>(
   if (!apiKey) throw new LlmError("LLMAPI_KEY 환경변수가 없습니다.", false);
 
   const primaryFirst = [
-    ...new Set([process.env.LLM_MODEL || DEFAULT_MODEL, FALLBACK_MODEL]),
+    ...new Set([
+      process.env.LLM_MODEL || DEFAULT_MODEL,
+      process.env.LLM_FALLBACK_MODEL || FALLBACK_MODEL,
+    ]),
   ];
-  const models =
+  const ordered =
     options.preferredModel === "secondary"
       ? [...primaryFirst].reverse()
       : primaryFirst;
+  // 모두 404였다면 설정이 바뀌었을 수 있으니 다시 시도해 본다.
+  const available = ordered.filter((m) => !unavailableModels.has(m));
+  const models = available.length ? available : ordered;
   const deadline = Date.now() + CALL_DEADLINE_MS;
   /** 모델별로 다음 시도 전에 기다려야 하는 시각 */
   const notBefore = new Map<string, number>();
 
-  /** 일일 한도가 끝나 이번 호출에서 더 부르지 않는 모델 */
+  /** 일일 한도가 끝났거나 없는 모델(404)이라 이번 호출에서 더 부르지 않는 모델 */
   const exhausted = new Set<string>();
   const usable = () => models.filter((m) => !exhausted.has(m));
 
@@ -261,10 +293,13 @@ export async function generateJson<T>(
     } catch (error) {
       if (!(error instanceof LlmError)) throw error;
 
-      if (error.dailyQuotaExhausted) {
+      if (error.dailyQuotaExhausted || error.modelUnavailable) {
         exhausted.add(model);
+        if (error.modelUnavailable) unavailableModels.add(model);
         if (!usable().length) {
-          console.warn(`[단톡위키] ${error.message} → 모든 모델의 일일 한도 소진`);
+          console.warn(
+            `[단톡위키] ${error.message} → ${error.modelUnavailable ? "쓸 수 있는 모델이 없음" : "모든 모델의 일일 한도 소진"}`,
+          );
           throw error;
         }
         console.warn(`[단톡위키] ${error.message} → 다른 모델로 재시도`);

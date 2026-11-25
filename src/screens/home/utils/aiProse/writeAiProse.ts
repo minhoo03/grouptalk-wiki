@@ -1,4 +1,5 @@
 import {
+  isItemSection,
   proseJobResultSchema,
   type Excerpt,
   type OverviewInfo,
@@ -82,16 +83,66 @@ async function requestJob(
   }
 }
 
-/** 묶음을 CONCURRENCY개씩 동시에 요청하고, 하나 끝날 때마다 진행률을 알린다. */
+/**
+ * 같은 일화가 여러 섹션에 되풀이되지 않게 묶음을 순서대로 보낸다.
+ * 사건을 자세히 쓰는 섹션(에피소드·논란)이 먼저 쓰고, 뒤 순서 묶음은 앞에서 다룬 이야기 목록(covered)을 받아
+ * 다시 풀어 쓰지 않는다. 같은 순서 안의 묶음은 동시에 보낸다. 인물 문서는 단톡방 문서와 따로 읽히므로 첫 순서에 보낸다.
+ */
+const COVER_ORDER: Record<string, number> = {
+  episodes: 0,
+  controversy: 0,
+  members: 0,
+  overview: 1,
+  naming: 1,
+  history: 1,
+  culture: 1,
+  slang: 1,
+};
+/** 위에 없는 섹션(명예의 전당·여담)은 마지막에 앞의 모든 이야기를 받고 쓴다. */
+const LAST_ORDER = 2;
+const COVERED_LIMIT = 80;
+const COVERED_TEXT_LIMIT = 300;
+const FOOTNOTE = /\[\*\s*([^\]]+)\]/g;
+
+function orderOf(job: ProseJob) {
+  if (job.kind === "person") return 0;
+  return Math.max(
+    ...job.request.sections.map((s) => COVER_ORDER[s.key] ?? LAST_ORDER),
+  );
+}
+
+/** 응답에서 "이미 다룬 이야기"를 뽑는다: 사건 항목 제목·날짜, 연표, 각주 인용, 장면 인용의 첫 줄 */
+function coveredFrom(result: RoomProseResult): string[] {
+  const lines: string[] = [];
+  const fromText = (text: string) => {
+    for (const match of text.matchAll(FOOTNOTE)) lines.push(`인용 ${match[1]}`);
+    const first = text.split(/\r?\n/).find((line) => line.trim().startsWith(">"));
+    if (first) lines.push(`장면 ${first.trim()}`);
+  };
+  for (const section of result.sections)
+    for (const sub of section.subs) {
+      if (isItemSection(section.key) && sub.title)
+        lines.push(
+          `${section.key === "culture" ? "문화" : "사건"} "${sub.title}"${sub.dates?.length ? ` (${sub.dates.join(", ")})` : ""}`,
+        );
+      sub.paragraphs.forEach(fromText);
+      (sub.parts ?? []).forEach((part) => part.paragraphs.forEach(fromText));
+      (sub.rows ?? []).forEach((row) => row.forEach(fromText));
+    }
+  (result.timeline ?? []).forEach((event) =>
+    lines.push(`연표 ${event.date} ${event.name}`),
+  );
+  return lines.map((line) => line.slice(0, COVERED_TEXT_LIMIT));
+}
+
+/** 묶음을 CONCURRENCY개씩 동시에 요청하고, 하나 끝날 때마다 onDone을 부른다. */
 async function runJobs(
   jobs: ProseJob[],
-  onProgress: AiProseProgressHandler,
+  onDone: (result: ProseJobResult | null) => void,
   signal?: AbortSignal,
-): Promise<(ProseJobResult | null)[]> {
+): Promise<{ results: (ProseJobResult | null)[]; quotaExhausted: boolean }> {
   const results: (ProseJobResult | null)[] = [];
   let next = 0;
-  let done = 0;
-  onProgress(done, jobs.length);
 
   // 일일 한도가 끝나면 남은 묶음도 모두 거절되므로 보내지 않는다.
   let quotaExhausted = false;
@@ -108,14 +159,53 @@ async function runJobs(
           "[단톡위키] AI 일일 사용 한도가 끝나 남은 서술 요청을 보내지 않습니다. 규칙 기반 문장을 사용합니다.",
         );
       }
-      done += 1;
-      onProgress(quotaExhausted ? jobs.length : done, jobs.length);
+      onDone(result);
     }
   }
 
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, worker),
   );
+  return { results, quotaExhausted };
+}
+
+/** COVER_ORDER 순서대로 묶음을 보내고, 앞 순서에서 다룬 이야기를 뒤 순서 단톡방 묶음에 넘긴다. */
+async function runInOrder(
+  jobs: ProseJob[],
+  onProgress: AiProseProgressHandler,
+  signal?: AbortSignal,
+): Promise<(ProseJobResult | null)[]> {
+  const results: (ProseJobResult | null)[] = new Array(jobs.length).fill(null);
+  const covered: string[] = [];
+  let done = 0;
+  onProgress(done, jobs.length);
+
+  const orders = [...new Set(jobs.map(orderOf))].sort((a, b) => a - b);
+  for (const order of orders) {
+    if (signal?.aborted) break;
+    const indexes = jobs.flatMap((job, i) => (orderOf(job) === order ? [i] : []));
+    const coveredNow = [...new Set(covered)].slice(0, COVERED_LIMIT);
+    const batch = indexes.map((i): ProseJob => {
+      const job = jobs[i];
+      return job.kind === "room" && coveredNow.length
+        ? { ...job, request: { ...job.request, covered: coveredNow } }
+        : job;
+    });
+    const { results: batchResults, quotaExhausted } = await runJobs(
+      batch,
+      () => onProgress(++done, jobs.length),
+      signal,
+    );
+    batchResults.forEach((result, k) => {
+      results[indexes[k]] = result ?? null;
+      if (result?.kind === "room" && result.result)
+        covered.push(...coveredFrom(result.result));
+    });
+    if (quotaExhausted) {
+      onProgress(jobs.length, jobs.length);
+      break;
+    }
+  }
   return results;
 }
 
@@ -129,10 +219,24 @@ export async function writeAiProse(
   signal?: AbortSignal,
 ): Promise<GeneratedWiki> {
   const jobs = splitProseJobs(buildProseRequest(room, wiki, excerpts));
-  const results = await runJobs(jobs, onProgress, signal);
+  const results = await runInOrder(jobs, onProgress, signal);
 
   const roomSections: RoomProseResult["sections"] = [];
   const people: PersonProseResult["people"] = [];
+  /** 결과를 받지 못한 묶음의 섹션·인물. 화면에 "통계로만 작성했다"고 알린다. */
+  const missingSections = new Set<string>();
+  const missingPeople = new Set<string>();
+  jobs.forEach((job, index) => {
+    if (results[index]?.result) return;
+    if (job.kind === "room")
+      job.request.sections.forEach((section) => missingSections.add(section.key));
+    else job.request.people.forEach((person) => missingPeople.add(person.name));
+  });
+  // 여러 묶음에 나뉜 섹션(명예의 전당)은 한 묶음이라도 성공했으면 실패로 보지 않는다.
+  jobs.forEach((job, index) => {
+    if (job.kind === "room" && results[index]?.result)
+      job.request.sections.forEach((section) => missingSections.delete(section.key));
+  });
   let overviewInfo: OverviewInfo | null = null;
   let timeline: TimelineEvent[] | null = null;
   for (const response of results) {
@@ -153,8 +257,10 @@ export async function writeAiProse(
       wiki,
       { sections: roomSections, overviewInfo, timeline },
       memberNames,
+      missingSections,
     ),
     personProse,
+    aiMissingPeople: [...missingPeople],
     aiWritten:
       roomSections.length > 0 ||
       overviewInfo !== null ||

@@ -8,10 +8,7 @@ import type {
 } from "@/screens/home/utils/insights.types";
 import {
   BuildCtx,
-  at,
   b,
-  day,
-  del,
   dur,
   hours,
   link,
@@ -271,128 +268,6 @@ export function cultureSection(ctx: BuildCtx): WikiSec | null {
           ...(bandItems.length ? [ul(bandItems)] : []),
         ];
       },
-    },
-  ]);
-}
-
-export function slangSection(ctx: BuildCtx): WikiSec | null {
-  const { ins, room } = ctx;
-  return section(ctx, "slang", "상징·유행어", [
-    {
-      key: "top",
-      title: "대표 유행어",
-      build: () =>
-        ins.phrases.length
-          ? [
-              ul(
-                ins.phrases
-                  .slice(0, 5)
-                  .map(
-                    (ph): Rich => [
-                      b(`“${ph.text}”`),
-                      muted(` ${ph.count}회`),
-                      " - ",
-                      ...ph.users
-                        .slice(0, 2)
-                        .flatMap((u, i) => [
-                          i > 0 ? ", " : "",
-                          link(u.name),
-                          muted(`(${u.value})`),
-                        ]),
-                    ],
-                  ),
-              ),
-            ]
-          : null,
-    },
-    {
-      key: "origin",
-      title: "유행어의 기원",
-      build: () =>
-        ins.phrases.length
-          ? [
-              ul(
-                ins.phrases.slice(0, 3).map((ph): Rich => {
-                  const topUser = ph.users[0]?.name;
-                  return [
-                    b(`“${ph.text}”`),
-                    ` - ${at(ph.first)}, `,
-                    ...who(ph.first.author, "이/가"),
-                    " 처음 사용했다.",
-                    ...(topUser && topUser !== ph.first.author
-                      ? [
-                          " 이후 ",
-                          ...who(topUser, "이/가"),
-                          " 더 많이 쓰며 퍼뜨렸다.",
-                        ]
-                      : []),
-                  ];
-                }),
-              ),
-            ]
-          : null,
-    },
-    {
-      key: "habits",
-      title: "멤버별 말버릇",
-      build: () => {
-        const rows = room.participants.filter(
-          (pp) => (pp.catchphrases[0]?.count ?? 0) >= 2,
-        );
-        return rows.length
-          ? [
-              ul(
-                rows.map(
-                  (pp): Rich => [
-                    link(pp.name),
-                    ` - “${pp.catchphrases[0].word}”`,
-                    muted(` ${pp.catchphrases[0].count}회`),
-                  ],
-                ),
-              ),
-            ]
-          : null;
-      },
-    },
-    {
-      key: "nicknames",
-      title: "별명과 호칭",
-      build: () => [
-        p(
-          "대화 통계를 바탕으로 붙은 별명은 다음과 같다.",
-          ctx.fn("실제로 불리는 별명이 아니라 집계 결과로 붙인 것이다.", {
-            sec: "members",
-            sub: "traits",
-          }),
-        ),
-        ul(
-          room.participants.map(
-            (pp): Rich => [
-              link(pp.name),
-              " - ",
-              pp.badges.map((bd) => bd.name).join(", "),
-            ],
-          ),
-        ),
-      ],
-    },
-    {
-      key: "vanished",
-      title: "사라진 유행어",
-      build: () =>
-        ins.vanished.length
-          ? [
-              ul(
-                ins.vanished.map(
-                  (v): Rich => [
-                    b(v.word),
-                    ` - 총 ${v.count}회, 마지막 목격 ${day(v.lastKey)}`,
-                  ],
-                ),
-              ),
-              p(del("언젠가 다시 돌아올지도 모른다")),
-            ]
-          : null,
     },
   ]);
 }

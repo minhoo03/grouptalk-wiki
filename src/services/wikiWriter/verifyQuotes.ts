@@ -8,6 +8,20 @@ import type { Excerpt } from "@/services/wikiWriter/wikiWriter.schema";
  */
 
 const SCENE_LINE = /^>\s*([^:]+?)\s*:\s*(.*)$/;
+/** 접기로 감싼 장면 인용: 첫 줄 "{{{#!folding [ 제목 ]", 마지막 줄 "}}}" */
+export const FOLD_OPEN = /^\{\{\{#!folding\s*\[\s*(.*?)\s*\]\s*$/;
+export const FOLD_CLOSE = /^\}\}\}\s*$/;
+
+/** 접기 줄을 떼어 낸 본문 줄과 접기 제목. 접기가 아니면 fold는 null. */
+export function unwrapFold(lines: string[]): {
+  fold: string | null;
+  body: string[];
+} {
+  const open = lines.length >= 2 ? FOLD_OPEN.exec(lines[0].trim()) : null;
+  if (!open || !FOLD_CLOSE.test(lines[lines.length - 1].trim()))
+    return { fold: null, body: lines };
+  return { fold: open[1] || "펼치기", body: lines.slice(1, -1) };
+}
 const FOOTNOTE = /\[\*\s*([^\]]*)\]/g;
 const FOOTNOTE_BODY =
   /^(\d{4})[.-](\d{1,2})[.-](\d{1,2})\.?\s+([^:]+?)\s*:\s*["“'‘](.+)["”'’]\s*$/;
@@ -66,7 +80,9 @@ export class QuoteVerifier {
 
   /** 검증을 통과한 문단을 돌려준다. 남는 내용이 없으면 null. */
   verifyParagraph(paragraph: string): string | null {
-    const lines = paragraph.split(/\r?\n/).filter((line) => line.trim());
+    const { fold, body: lines } = unwrapFold(
+      paragraph.split(/\r?\n/).filter((line) => line.trim()),
+    );
     const isScene = lines.length > 0 && lines.every((l) => SCENE_LINE.test(l));
 
     if (isScene) {
@@ -76,10 +92,15 @@ export class QuoteVerifier {
         if (!ok) this.removed += 1;
         return ok;
       });
-      return kept.length ? kept.join("\n") : null;
+      if (!kept.length) return null;
+      return fold === null
+        ? kept.join("\n")
+        : [`{{{#!folding [ ${fold} ]`, ...kept, "}}}"].join("\n");
     }
 
-    const verified = this.verifyFootnotes(paragraph).trim();
+    // 장면이 아닌 내용을 접은 것은 접기를 풀고 서술로 둔다.
+    const prose = fold === null ? paragraph : lines.join("\n");
+    const verified = this.verifyFootnotes(prose).trim();
     return verified || null;
   }
 

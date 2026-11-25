@@ -22,8 +22,15 @@ const LONGEST_MESSAGE_LIMIT = 300;
  * AI가 문단으로 바꾸면 안 되는 하위 문단(표를 그대로 둔다). 내용은 같은 섹션 첫 하위 문단의 사실로 넘긴다.
  * 개요 > 기본 정보: AI는 표의 일부 칸만 overviewInfo로 채운다.
  * 역사 > 주요 사건 연표: AI는 표의 행을 timeline으로 채운다.
+ * 명칭 > 역대 방 이름: 시스템 메시지로 확인한 변경 이력이라 표를 그대로 둔다.
  */
-const FACTS_ONLY_SUBS = new Set(["overview/info", "history/timeline"]);
+export const FACTS_ONLY_SUBS: ReadonlySet<string> = new Set([
+  "overview/info",
+  "history/timeline",
+  "naming/renames",
+]);
+/** AI에 보내지 않는 하위 문단. 원본 숫자 표뿐이고, 같은 숫자는 다른 하위 문단의 사실에 이미 있다. */
+export const RULE_ONLY_SUBS: ReadonlySet<string> = new Set(["members/relations"]);
 
 function clip(text: string, limit = FACTS_LIMIT) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
@@ -57,6 +64,12 @@ function blockToText(block: Block, notes: RoomWiki["notes"]): string {
       return richToText(block.content, notes);
     case "list":
       return block.items.map((item) => `- ${richToText(item, notes)}`).join("\n");
+    case "h":
+      return `[${block.text}]`;
+    case "facts":
+      return block.text;
+    case "fold":
+      return block.blocks.map((inner) => blockToText(inner, notes)).join("\n");
     case "table":
       return [
         block.head.join(" | "),
@@ -175,6 +188,8 @@ export function buildProseRequest(
         sub.blocks.map((block) => blockToText(block, wiki.notes)).join("\n");
       const isFactsOnly = (sub: (typeof section.subs)[number]) =>
         FACTS_ONLY_SUBS.has(`${section.key}/${sub.key}`);
+      const isRuleOnly = (sub: (typeof section.subs)[number]) =>
+        RULE_ONLY_SUBS.has(`${section.key}/${sub.key}`);
       const extraFacts = section.subs
         .filter(isFactsOnly)
         .map((sub) => `[${sub.title}]\n${subText(sub)}`)
@@ -201,7 +216,7 @@ export function buildProseRequest(
         key: section.key,
         title: section.title,
         subs: section.subs
-          .filter((sub) => !isFactsOnly(sub))
+          .filter((sub) => !isFactsOnly(sub) && !isRuleOnly(sub))
           .map((sub, index) => ({
             key: sub.key,
             title: sub.title,

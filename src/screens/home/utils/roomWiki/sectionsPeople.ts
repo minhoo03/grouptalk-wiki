@@ -1,120 +1,176 @@
 import type { PersonProfile } from "@/types/chat";
-import type { Rich, WikiSec } from "@/types/wiki";
+import type { Block, Rich, WikiSec } from "@/types/wiki";
 import { HALL_OF_FAME_KEY } from "@/services/wikiWriter/wikiWriter.schema";
-import { daysBetween } from "@/screens/home/utils/chatMetrics";
-import type { Ranked } from "@/screens/home/utils/roomInsights";
+import { formatHour } from "@/utils/format";
+import {
+  PAIR_MIN_MESSAGES_RELAXED,
+  ROLE_THRESHOLD,
+  type RoleScore,
+} from "@/screens/home/utils/memberInsights";
 import {
   BuildCtx,
   b,
   day,
+  facts,
   link,
-  muted,
   n,
   p,
   say,
   section,
-  ul,
+  table,
 } from "@/screens/home/utils/roomWiki/builder";
 
+const NO_CELL = "-";
+/** 관계도 요약표에 넣는 최대 인원(메시지 많은 순) */
+const RELATION_MEMBERS = 10;
+/** 분기별 지분 표에 따로 보여 주는 최대 인원. 나머지는 "기타"로 묶는다. */
+const QUARTER_MEMBERS = 5;
+/** 인원 변동 표가 이보다 길면 접는다. */
+const ROSTER_FOLD_ROWS = 10;
+const ROSTER_ROWS = 40;
+
+const fixed = (v: number, digits = 2) => v.toFixed(digits);
+
+/** 정규화 값이 ROLE_THRESHOLD 이상인 지표 1~2개 */
+function strongRoles(scores: RoleScore[]) {
+  return scores
+    .filter((s) => s.value >= ROLE_THRESHOLD && s.count > 0)
+    .slice(0, 2);
+}
+
+/** AI가 역할명을 짓지 못했을 때 쓰는 이름 */
+function roleName(scores: RoleScore[]) {
+  const strong = strongRoles(scores);
+  return strong.length ? `${strong[0].label} 담당` : "고르게 참여";
+}
+
+/** 친밀도 지수를 사람이 읽는 말로 */
+function closeness(index: number) {
+  if (index >= 1.5) return "유난히 자주 주고받는다";
+  if (index >= 1.1) return "자주 주고받는 편";
+  if (index >= 0.9) return "말하는 양만큼 주고받는다";
+  return "상대적으로 덜 주고받는다";
+}
+
+/**
+ * 멤버 섹션(prompts/room/members.md의 1.1~1.8).
+ * 화면에는 사람이 읽는 말만 두고, 정규화 값·친밀도 지수 같은 계산값은 AI에게만 보낸다(facts).
+ * 표의 "한 줄 캐릭터", "퇴장 전후 상황", "역할", "대표 장면" 칸은 AI가 채운다(AI_TABLE_SUBS).
+ * 멤버별 특징·케미·의외의 조합은 AI가 멤버·쌍마다 소제목을 단다(AI_PARTS_SUBS).
+ * 근거가 없는 하위 문단은 "없다"고 쓰지 않고 만들지 않는다.
+ */
 export function memberSection(ctx: BuildCtx): WikiSec | null {
-  const { ins, room } = ctx;
-  const lastKey = (name: string) =>
-    room.participants.find((pp) => pp.name === name)?.lastMessage?.dateKey ??
-    null;
-  const isFormer = (name: string) => {
-    const k = lastKey(name);
-    return (
-      ins.spanDays > 60 &&
-      Boolean(k && ins.endKey && daysBetween(k, ins.endKey) > 30)
-    );
-  };
+  const { people, events } = ctx;
+  const cards = [...people.cards].sort((a, b) => b.count - a.count);
+  const current = cards.filter((c) => c.status !== "퇴장");
+  const former = cards.filter((c) => c.status === "퇴장");
+  const rolesOf = new Map(people.roles.map((r) => [r.name, r.scores]));
+  const hasMemberEvents = events.some((e) => e.type !== "rename");
+  const topPairs = people.pairs.slice(0, 3);
+  const scoreLine = (scores: RoleScore[]) =>
+    scores.map((s) => `${s.label} ${fixed(s.value)}`).join(", ");
 
   return section(ctx, "members", "멤버", [
     {
       key: "current",
       title: "현재 멤버",
-      build: () => {
-        const current = room.participants.filter((pp) => !isFormer(pp.name));
-        return current.length
+      build: () =>
+        current.length
           ? [
-              ul(
-                current.map(
-                  (pp): Rich => [
-                    link(pp.name),
-                    muted(
-                      ` - 지분 ${pp.share}%, 마지막 발언 ${day(pp.lastMessage?.dateKey ?? null)}`,
-                    ),
-                  ],
-                ),
+              table(
+                ["이름", "상태", "합류", "한 줄 캐릭터", "지분"],
+                current.map((c): Rich[] => [
+                  [link(c.name)],
+                  [c.status],
+                  [c.joinKey ? day(c.joinKey) : "기록 시작 시점부터"],
+                  [roleName(rolesOf.get(c.name) ?? [])],
+                  [`${c.share}%`],
+                ]),
+              ),
+              p(
+                "활동은 최근 30일 안에 말한 멤버, 휴면은 퇴장 기록 없이 최근 30일 동안 말이 없는 멤버다.",
+                ...(hasMemberEvents
+                  ? []
+                  : [
+                      ctx.fn(
+                        "대화 파일에 입장 기록이 없어 모든 멤버를 기록 시작 시점부터 있던 것으로 본다.",
+                      ),
+                    ]),
               ),
             ]
-          : null;
-      },
+          : null,
     },
     {
       key: "former",
       title: "이전 멤버",
-      build: () => {
-        const former = room.participants.filter((pp) => isFormer(pp.name));
-        return former.length
+      build: () =>
+        former.length
           ? [
-              p(
-                "마지막 기록 기준 30일 넘게 발언이 없는 멤버.",
-                ctx.fn("퇴장 기록이 아니라 발언 공백으로 판단했다.", {
-                  sec: "stats",
-                  sub: "gaps",
-                }),
-              ),
-              ul(
-                former.map(
-                  (pp): Rich => [
-                    link(pp.name),
-                    muted(` - 마지막 발언 ${day(lastKey(pp.name))}`),
+              table(
+                ["이름", "활동 기간", "퇴장일", "퇴장 전후 상황"],
+                former.map((c): Rich[] => [
+                  [link(c.name)],
+                  [
+                    c.firstKey
+                      ? `${day(c.firstKey)} ~ ${day(c.lastKey)}`
+                      : "발언 없음",
                   ],
-                ),
+                  [day(c.leaveKey)],
+                  [NO_CELL],
+                ]),
               ),
             ]
-          : null;
+          : null,
+    },
+    {
+      key: "traits",
+      title: "멤버별 특징",
+      // AI가 장면을 읽고 쓰는 하위 문단. 숫자는 근거로만 넘기고 화면에는 내지 않는다.
+      build: () => {
+        const speakers = current.filter((c) => c.count > 0);
+        if (!speakers.length) return null;
+        return [
+          facts(
+            "멤버별 활동 통계(근거로만 쓰고 숫자를 나열하지 않는다):",
+            ...speakers.map(
+              (c) =>
+                `- ${c.name}: 메시지 ${n(c.count)}개(지분 ${c.share}%), 평균 ${c.avgLength}자, 한 번에 평균 ${c.avgRun}개씩 이어 보냄, 주 활동 ${formatHour(c.peakHour)}, 23~5시 비율 ${c.nightShare}%, 두드러진 행동 ${roleName(rolesOf.get(c.name) ?? [])}`,
+            ),
+          ),
+        ];
       },
     },
     {
       key: "roles",
       title: "멤버별 역할",
       build: () => {
-        const dims: { label: string; rank: Ranked[] }[] = [
-          { label: "대화 시동꾼", rank: ins.starters },
-          { label: "마무리 담당", rank: ins.enders },
-          {
-            label: "리액션 담당",
-            rank: ins.types.find((t) => t.key === "laugh")?.ranking ?? [],
-          },
-          {
-            label: "질문 담당",
-            rank: ins.types.find((t) => t.key === "question")?.ranking ?? [],
-          },
-          { label: "사진 담당", rank: ins.media.photo },
-          { label: "정보 공유 담당", rank: ins.media.link },
-          {
-            label: "장문 담당",
-            rank: ins.types.find((t) => t.key === "long")?.ranking ?? [],
-          },
-        ];
-
-        const items = ins.members.map((m): Rich => {
-          let best = { label: "청취 담당", score: 0 };
-          dims.forEach((d) => {
-            const max = d.rank[0]?.value ?? 0;
-            const mine = d.rank.find((r) => r.name === m.name)?.value ?? 0;
-            const score = max ? mine / max : 0;
-            if (score > best.score) best = { label: d.label, score };
-          });
-          return [link(m.name), " - ", b(best.label)];
-        });
+        const rows = people.roles.filter((r) =>
+          current.some((c) => c.name === r.name && c.count > 0),
+        );
+        if (!rows.length) return null;
         return [
-          p(
-            "각 멤버가 단톡방 안에서 상대적으로 가장 두드러지는 역할을 골랐다.",
+          table(
+            ["멤버", "역할", "대표 장면"],
+            rows.map((r): Rich[] => {
+              const example = strongRoles(r.scores)[0]?.example;
+              return [
+                [link(r.name)],
+                [roleName(r.scores)],
+                [
+                  example
+                    ? `${day(example.dateKey)} ${say(example.text, 30)}`
+                    : NO_CELL,
+                ],
+              ];
+            }),
           ),
-          ul(items),
+          facts(
+            "역할 지표: (그 행동에서 멤버가 차지한 비율 ÷ 전체 메시지에서 멤버가 차지한 비율). 1.3 이상이면 그 멤버가 평소 말하는 양보다 그 행동을 눈에 띄게 많이 한다. 대화 시작·마무리는 앞뒤 2시간 공백, 리액션은 다른 사람 말 뒤 1분 안의 10자 이하, 장문은 50자 이상.",
+            ...rows.map((r) => {
+              const strong = strongRoles(r.scores);
+              return `- ${r.name}: ${strong.length ? `두드러진 지표 ${scoreLine(strong)}` : "1.3 이상인 지표 없음"} / 전체 ${scoreLine(r.scores)}`;
+            }),
+          ),
         ];
       },
     },
@@ -122,26 +178,130 @@ export function memberSection(ctx: BuildCtx): WikiSec | null {
       key: "chemistry",
       title: "멤버 간 케미",
       build: () =>
-        ins.pairs.length
+        topPairs.length
           ? [
-              ul(
-                ins.pairs
-                  .slice(0, 3)
-                  .map(
-                    (pr): Rich => [
-                      link(pr.a),
-                      " × ",
-                      link(pr.b),
-                      ` - 서로 ${pr.count}번 말을 주고받았다.`,
-                    ],
-                  ),
+              table(
+                ["두 사람", "주고받는 정도"],
+                topPairs.map((pr): Rich[] => [
+                  [link(pr.a), " × ", link(pr.b)],
+                  [closeness(pr.index)],
+                ]),
+              ),
+              p("두 사람이 서로의 말에 바로 답한 횟수를, 각자 말하는 양에 비춰 견준 것이다."),
+              facts(
+                `친밀도 상위 쌍(5분 안 상호 응답 기준${people.relaxed ? ", 작은 방이라 기준을 30개·10회로 낮춤" : ""}):`,
+                ...topPairs.map(
+                  (pr) =>
+                    `- ${pr.a} × ${pr.b}: 5분 내 상호 응답 ${n(pr.actual)}회(기대값 ${fixed(pr.expected, 1)}회), 친밀도 지수 ${fixed(pr.index, 3)}, ${pr.rank}위/${people.pairs.length}쌍`,
+                ),
               ),
             ]
           : null,
     },
+    {
+      key: "unexpected",
+      title: "의외의 조합",
+      build: () =>
+        people.unexpected.length
+          ? [
+              facts(
+                "의외의 조합 후보:",
+                ...people.unexpected.map((pr) => `- ${pr.a} × ${pr.b}: ${pr.reason}`),
+              ),
+            ]
+          : null,
+    },
+    {
+      key: "roster",
+      title: "인원 변천사",
+      build: () => {
+        const blocks: Block[] = [];
+        if (people.roster.length) {
+          const rows = people.roster.slice(0, ROSTER_ROWS);
+          blocks.push(
+            table(
+              ["날짜", "변동", "인원"],
+              rows.map((r): Rich[] => [
+                [day(r.dateKey)],
+                [r.change],
+                [`${n(r.count)}명`],
+              ]),
+              rows.length > ROSTER_FOLD_ROWS ? "인원 변동 전체 펼치기" : undefined,
+            ),
+          );
+        } else {
+          blocks.push(
+            p(`기록 기간 내내 ${n(cards.length)}명 체제가 그대로 유지되었다.`),
+          );
+        }
+        if (people.quarters.length >= 2) {
+          const speakers = cards.filter((c) => c.count > 0);
+          const shown = speakers.slice(0, QUARTER_MEMBERS);
+          const others = speakers.length > shown.length;
+          blocks.push(
+            table(
+              [
+                "분기",
+                ...shown.map((c) => c.name),
+                ...(others ? ["기타"] : []),
+                "총 메시지",
+              ],
+              people.quarters.map((q): Rich[] => {
+                const shareOf = (count: number) =>
+                  q.total ? `${Math.round((count / q.total) * 100)}%` : "0%";
+                const shownSum = shown.reduce(
+                  (sum, c) => sum + (q.counts.get(c.name) ?? 0),
+                  0,
+                );
+                return [
+                  [q.label],
+                  ...shown.map((c): Rich => [shareOf(q.counts.get(c.name) ?? 0)]),
+                  ...(others ? [[shareOf(q.total - shownSum)]] : []),
+                  [n(q.total)],
+                ];
+              }),
+            ),
+          );
+        }
+        return blocks;
+      },
+    },
+    {
+      key: "relations",
+      title: "멤버 관계도",
+      build: () => {
+        const eligible = new Set(
+          cards
+            .filter((c) => c.count >= PAIR_MIN_MESSAGES_RELAXED)
+            .slice(0, RELATION_MEMBERS)
+            .map((c) => c.name),
+        );
+        const pairs = people.allPairs.filter(
+          (pr) => eligible.has(pr.a) && eligible.has(pr.b),
+        );
+        if (eligible.size < 3 || !pairs.length) return null;
+        const partner = (name: string, pick: "best" | "worst") => {
+          const mine = pairs.filter((pr) => pr.a === name || pr.b === name);
+          const chosen = pick === "best" ? mine[0] : mine[mine.length - 1];
+          if (!chosen) return NO_CELL;
+          return chosen.a === name ? chosen.b : chosen.a;
+        };
+        const names = people.matrix.names.filter((name) => eligible.has(name));
+        return [
+          table(
+            ["멤버", "가장 잘 받아주는 상대", "가장 덜 엮이는 상대"],
+            names.map((name): Rich[] => [
+              [link(name)],
+              [partner(name, "best")],
+              [partner(name, "worst")],
+            ]),
+          ),
+          p("각자 말하는 양에 비해 서로의 말에 바로 답한 정도로 견줬다."),
+        ];
+      },
+    },
   ]);
 }
-
 
 /** 규칙 기반 제목의 대표 장면: 별명 → 말버릇 → 메시지 수 */
 function hallOfFameHeadline(person: PersonProfile) {

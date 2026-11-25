@@ -104,6 +104,14 @@ const blockSchema: z.ZodType<Block> = z.discriminatedUnion("type", [
     type: z.literal("table"),
     head: z.array(z.string()),
     rows: z.array(z.array(richSchema)),
+    fold: z.string().optional(),
+  }),
+  z.object({ type: z.literal("h"), text: z.string() }),
+  z.object({ type: z.literal("facts"), text: z.string() }),
+  z.object({
+    type: z.literal("fold"),
+    label: z.string(),
+    blocks: z.array(z.lazy(() => blockSchema)),
   }),
   z.object({
     type: z.literal("bars"),
@@ -120,6 +128,7 @@ const blockSchema: z.ZodType<Block> = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("dialogue"),
     lines: z.array(z.object({ author: z.string(), text: z.string() })),
+    fold: z.string().optional(),
   }),
 ]);
 
@@ -137,6 +146,7 @@ const numberedSecSchema: z.ZodType<NumberedSec> = z.object({
       blocks: z.array(blockSchema),
     }),
   ),
+  aiMissing: z.boolean().optional(),
 });
 
 const wikiNoteSchema: z.ZodType<WikiNote> = z.object({
@@ -163,6 +173,8 @@ export const sharedWikiSchema = z.object({
     )
     .default({}),
   aiWritten: z.boolean().default(false),
+  // AI 서술에 실패한 인물. 이 기능 전에 저장된 공유 문서는 빈 목록으로 읽는다.
+  aiMissingPeople: z.array(z.string()).default([]),
 });
 
 export type SharedWiki = z.infer<typeof sharedWikiSchema>;
