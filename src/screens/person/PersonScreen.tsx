@@ -4,6 +4,7 @@ import { MessagesSquareIcon, UploadIcon } from "lucide-react";
 
 import { DocActionButton } from "@/components/wiki/DocActionButton";
 import { DocHeader } from "@/components/wiki/DocHeader";
+import { ShareLinkButton } from "@/components/wiki/ShareLinkButton";
 import {
   FootnoteProvider,
   type FootnoteEntry,
@@ -173,6 +174,7 @@ function PersonDocument({
         ]}
         actions={
           <>
+            <ShareLinkButton personName={person.name} />
             <DocActionButton
               icon={<MessagesSquareIcon className="h-4 w-4" />}
               label="단톡방"

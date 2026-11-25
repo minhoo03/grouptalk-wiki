@@ -22,11 +22,11 @@ import {
 import { WikiLink } from "@/components/wiki/WikiLink";
 import { WikiNotice } from "@/components/wiki/WikiNotice";
 import { WikiSection } from "@/components/wiki/WikiSection";
+import { ShareLinkButton } from "@/components/wiki/ShareLinkButton";
 import { useWikiRoutes } from "@/hooks/useWikiRoutes";
 import { useWikiStore } from "@/store/wikiStore";
 import { formatDateKey, formatHour } from "@/utils/format";
 import { HOME_PATH } from "@/utils/wikiRoutes";
-import { ShareLinkButton } from "@/screens/room/components/ShareLinkButton";
 
 const HERO_AVATAR_LIMIT = 8;
 
