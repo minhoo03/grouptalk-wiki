@@ -163,11 +163,8 @@ export function FootnoteRef({ n }: FootnoteRefProps) {
               left: position?.left ?? -9999,
               top: position?.top ?? -9999,
               visibility: position ? "visible" : "hidden",
-              transformOrigin: position
-                ? `${position.arrowLeft}px ${position.isBelow ? "0%" : "100%"}`
-                : "center",
             }}
-            className="z-50 w-max max-w-[min(420px,calc(100vw-24px))] rounded-[6px] border border-line bg-white px-5 py-4 text-[15px] leading-relaxed text-ink shadow-[0_4px_16px_rgba(0,0,0,0.12)] duration-150 animate-in fade-in-0 zoom-in-95 motion-reduce:animate-none"
+            className="z-50 w-max max-w-[min(420px,calc(100vw-24px))] rounded-[6px] border border-line bg-white px-5 py-4 text-[15px] leading-relaxed text-ink shadow-[0_4px_16px_rgba(0,0,0,0.12)] duration-150 animate-in fade-in-0 motion-reduce:animate-none"
           >
             <span className="mr-1.5 text-link">[{n}]</span>
             {note.content}
