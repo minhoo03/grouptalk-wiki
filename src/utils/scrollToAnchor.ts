@@ -1,9 +1,8 @@
-/** Smooth-scrolls to an element by id and briefly highlights it so the reader's eye lands on it. */
+/** Jumps (no scroll animation) to an element by id and briefly highlights it so the reader's eye lands on it. */
 export function scrollToAnchor(id: string): boolean {
   const el = document.getElementById(id);
   if (!el) return false;
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+  el.scrollIntoView({ behavior: "instant", block: "center" });
   el.classList.remove("fn-flash");
   // Force reflow so the highlight restarts when the same target is clicked twice.
   void el.offsetWidth;

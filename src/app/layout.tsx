@@ -17,7 +17,7 @@ type RootLayoutProps = {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="ko" data-scroll-behavior="smooth">
+    <html lang="ko">
       <body>
         <AppProviders>
           <div className="min-h-screen w-full bg-paper text-ink">
