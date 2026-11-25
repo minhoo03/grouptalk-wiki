@@ -12,13 +12,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { useWikiRoutes } from "@/hooks/useWikiRoutes";
 import { useWikiStore } from "@/store/wikiStore";
-import {
-  HOME_PATH,
-  ROOM_PATH,
-  personPath,
-  resolveSearchPath,
-} from "@/utils/wikiRoutes";
+import { HOME_PATH, resolveSearchPath } from "@/utils/wikiRoutes";
 
 const NAV_ITEM_CLASS_NAME =
   "flex items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2.5 py-2 text-[15px] font-bold text-white transition-colors duration-150 hover:bg-namu-dark";
@@ -26,6 +22,7 @@ const NAV_ITEM_CLASS_NAME =
 export function SiteHeader() {
   const router = useRouter();
   const room = useWikiStore((state) => state.generated?.room ?? null);
+  const routes = useWikiRoutes();
   const [query, setQuery] = useState("");
 
   const hasRoom = room !== null;
@@ -36,7 +33,7 @@ export function SiteHeader() {
     event.preventDefault();
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return;
-    router.push(resolveSearchPath(room, trimmedQuery));
+    router.push(resolveSearchPath(room, trimmedQuery, routes));
     setQuery("");
   }
 
@@ -45,15 +42,16 @@ export function SiteHeader() {
     // 인물 문서에서 누르면 가능한 한 다른 사람으로 이동한다.
     // event handler 안에서만 현재 URL을 읽어 layout 전체가 useSearchParams의 Suspense 경계를 갖지 않게 한다.
     const currentUrl = new URL(window.location.href);
+    // 공유 문서의 인물 문서(`/s/{code}/person`)도 같은 인물 문서로 본다.
     const currentName =
-      currentUrl.pathname === "/person"
+      currentUrl.pathname.endsWith("/person")
         ? currentUrl.searchParams.get("name")
         : null;
     const pool =
       currentName && names.length > 1
         ? names.filter((name) => name !== currentName)
         : names;
-    router.push(personPath(pool[Math.floor(Math.random() * pool.length)]));
+    router.push(routes.person(pool[Math.floor(Math.random() * pool.length)]));
   }
 
   return (
@@ -75,7 +73,7 @@ export function SiteHeader() {
             <span className="hidden md:inline">대문</span>
           </Link>
           {hasRoom ? (
-            <Link href={ROOM_PATH} className={NAV_ITEM_CLASS_NAME}>
+            <Link href={routes.room} className={NAV_ITEM_CLASS_NAME}>
               <MessagesSquareIcon className="h-4 w-4" />
               <span className="hidden md:inline">단톡방 문서</span>
             </Link>

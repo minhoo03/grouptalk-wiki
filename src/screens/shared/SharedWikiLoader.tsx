@@ -1,21 +1,25 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 
-import { RoomScreen } from "@/screens/room/RoomScreen";
 import type { SharedWiki } from "@/services/sharedWiki/sharedWiki.schema";
 import { useWikiStore } from "@/store/wikiStore";
 
-type SharedWikiScreenProps = {
+type SharedWikiLoaderProps = {
   code: string;
   sharedWiki: SharedWiki;
+  children: ReactNode;
 };
 
 /**
- * 서버에서 복호화한 공유 문서를 store에 넣고 단톡방 문서를 그린다.
- * header·sidebar·인물 문서가 같은 store를 읽으므로, 공유 링크로 들어와도 인물 문서 링크가 그대로 동작한다.
+ * 서버에서 복호화한 공유 문서를 store에 넣은 뒤 `/s/[code]` 아래 화면(단톡방·인물·검색)을 그린다.
+ * layout에서 쓰므로 같은 공유 문서 안에서 이동할 때는 다시 불러오지 않는다.
  */
-export function SharedWikiScreen({ code, sharedWiki }: SharedWikiScreenProps) {
+export function SharedWikiLoader({
+  code,
+  sharedWiki,
+  children,
+}: SharedWikiLoaderProps) {
   const setGenerated = useWikiStore((state) => state.setGenerated);
   const isLoaded = useWikiStore(
     (state) => state.shareCode === code && state.generated !== null,
@@ -29,5 +33,5 @@ export function SharedWikiScreen({ code, sharedWiki }: SharedWikiScreenProps) {
   // store에 반영되기 전 한 번의 렌더에서 "없는 문서"가 깜빡이지 않게 한다.
   if (!isLoaded) return null;
 
-  return <RoomScreen />;
+  return children;
 }

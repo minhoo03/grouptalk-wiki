@@ -13,7 +13,7 @@ import type { Block, Inline, NumberedSec, RoomWiki, WikiNote } from "@/types/wik
  * `z.ZodType<T>` 주석으로 앱 타입과 schema가 어긋나면 typecheck에서 드러나게 한다.
  */
 
-export const SHARE_CODE_PATTERN = /^[A-Za-z0-9]{8}$/;
+export const SHARE_CODE_PATTERN = /^[A-Za-z0-9]{16}$/;
 
 const nullableInt = z.number().int().nullable();
 

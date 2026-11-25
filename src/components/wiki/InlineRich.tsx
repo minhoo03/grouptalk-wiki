@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 
+import { useWikiRoutes } from "@/hooks/useWikiRoutes";
 import type { Rich } from "@/types/wiki";
-import { personPath } from "@/utils/wikiRoutes";
 import { FootnoteRef } from "@/components/wiki/FootnoteRef";
 import { WikiLink } from "@/components/wiki/WikiLink";
 
@@ -10,6 +10,8 @@ type InlineRichProps = {
 };
 
 export function InlineRich({ content }: InlineRichProps) {
+  const routes = useWikiRoutes();
+
   return (
     <>
       {content.map((part, index) => {
@@ -29,7 +31,7 @@ export function InlineRich({ content }: InlineRichProps) {
             );
           case "link":
             return (
-              <WikiLink key={index} href={personPath(part.name)}>
+              <WikiLink key={index} href={routes.person(part.name)}>
                 {part.name}
               </WikiLink>
             );

@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { useWikiRoutes } from "@/hooks/useWikiRoutes";
 import type { PersonProfile } from "@/types/chat";
-import { personPath } from "@/utils/wikiRoutes";
 import { PixelAvatar } from "@/components/wiki/PixelAvatar";
 
 type MemberNavboxProps = {
@@ -18,6 +18,7 @@ export function MemberNavbox({
   people,
   currentName,
 }: MemberNavboxProps) {
+  const routes = useWikiRoutes();
   const [isOpen, setIsOpen] = useState(true);
 
   return (
@@ -40,7 +41,7 @@ export function MemberNavbox({
             return (
               <li key={person.name} className="border-r border-b border-line">
                 <Link
-                  href={personPath(person.name)}
+                  href={routes.person(person.name)}
                   aria-current={isCurrent ? "page" : undefined}
                   className={`flex w-full flex-col items-center gap-1.5 px-2 py-3 transition-colors duration-150 ${isCurrent ? "bg-paper" : "hover:bg-paper"}`}
                 >

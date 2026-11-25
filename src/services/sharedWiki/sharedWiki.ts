@@ -22,7 +22,8 @@ import {
 const TABLE = "shared_chats";
 const CODE_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-const CODE_LENGTH = 8;
+/** 62^16 ≈ 4.8×10^28 (약 95비트). 링크를 모르는 사람이 코드를 추측해 열 수 없을 만큼 길게 둔다. */
+const CODE_LENGTH = 16;
 const MAX_CODE_ATTEMPTS = 3;
 /** Postgres unique_violation */
 const UNIQUE_VIOLATION = "23505";

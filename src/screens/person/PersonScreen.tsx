@@ -4,6 +4,7 @@ import { MessagesSquareIcon, UploadIcon } from "lucide-react";
 
 import { DocActionButton } from "@/components/wiki/DocActionButton";
 import { DocHeader } from "@/components/wiki/DocHeader";
+import { ShareLinkButton } from "@/components/wiki/ShareLinkButton";
 import {
   FootnoteProvider,
   type FootnoteEntry,
@@ -21,12 +22,13 @@ import { TableOfContents } from "@/components/wiki/TableOfContents";
 import { WikiLink } from "@/components/wiki/WikiLink";
 import { WikiNotice } from "@/components/wiki/WikiNotice";
 import { WikiSection } from "@/components/wiki/WikiSection";
+import { useWikiRoutes } from "@/hooks/useWikiRoutes";
 import { useWikiStore } from "@/store/wikiStore";
 import type { PersonProfile, RoomProfile } from "@/types/chat";
 import type { Block, PersonProseEntry } from "@/types/wiki";
 import { formatDateKey, formatHour, formatTime } from "@/utils/format";
 import { hasBatchim, josa } from "@/utils/korean";
-import { HOME_PATH, ROOM_PATH, personPath } from "@/utils/wikiRoutes";
+import { HOME_PATH } from "@/utils/wikiRoutes";
 import { rarityMeta } from "@/screens/person/rarity";
 
 type PersonScreenProps = {
@@ -106,8 +108,13 @@ function AiBlocks({ blocks, className }: AiBlocksProps) {
 }
 
 /** 각주에서 단톡방 문서의 계산 방법 문단으로 이동하는 링크 */
-function roomSectionLink(room: RoomProfile, anchorId: string, title: string) {
-  return { label: `${room.roomTitle} › ${title}`, anchorId, href: ROOM_PATH };
+function roomSectionLink(
+  room: RoomProfile,
+  roomHref: string,
+  anchorId: string,
+  title: string,
+) {
+  return { label: `${room.roomTitle} › ${title}`, anchorId, href: roomHref };
 }
 
 function PersonDocument({
@@ -116,6 +123,7 @@ function PersonDocument({
   prose,
   aiMissing,
 }: PersonDocumentProps) {
+  const routes = useWikiRoutes();
   const topCatchphrase = person.catchphrases[0];
   const topPartner = person.replyPartners[0];
   const mainBadge = person.badges[0];
@@ -130,20 +138,20 @@ function PersonDocument({
   const notes: FootnoteEntry[] = [
     {
       content: `${formatDateKey(room.startDate)} ~ ${formatDateKey(room.endDate)} 대화 기록 기준.`,
-      link: roomSectionLink(room, "w-method-scope", "분석 대상과 기간"),
+      link: roomSectionLink(room, routes.room, "w-method-scope", "분석 대상과 기간"),
     },
     {
       content: "각 항목에서 단톡방 내 최고 기록을 100%로 놓고 환산한 값이다.",
-      link: roomSectionLink(room, "w-members-traits", "멤버별 특징"),
+      link: roomSectionLink(room, routes.room, "w-members-traits", "멤버별 특징"),
     },
     {
       content: `${person.longestMessage.length}자. 사진, 이모티콘 등은 제외하고 셌다.`,
-      link: roomSectionLink(room, "w-method-excluded", "제외된 메시지"),
+      link: roomSectionLink(room, routes.room, "w-method-excluded", "제외된 메시지"),
     },
     {
       content:
         "직전 발언자가 다른 사람일 경우, 그 사람의 말을 받아 준 것으로 계산했다.",
-      link: roomSectionLink(room, "w-method-graph", "관계도 계산 방법"),
+      link: roomSectionLink(room, routes.room, "w-method-graph", "관계도 계산 방법"),
     },
   ];
   // AI 각주는 고정 각주 뒤에 붙이고, AI 블록의 각주 번호도 같은 만큼 민다.
@@ -161,15 +169,16 @@ function PersonDocument({
       <DocHeader
         title={person.name}
         categories={[
-          { label: room.roomTitle, href: ROOM_PATH },
+          { label: room.roomTitle, href: routes.room },
           { label: `${room.roomTitle}/등장인물` },
         ]}
         actions={
           <>
+            <ShareLinkButton personName={person.name} />
             <DocActionButton
               icon={<MessagesSquareIcon className="h-4 w-4" />}
               label="단톡방"
-              href={ROOM_PATH}
+              href={routes.room}
             />
             <DocActionButton
               icon={<UploadIcon className="h-4 w-4" />}
@@ -189,7 +198,7 @@ function PersonDocument({
         <WikiNotice kind="redirect">
           <b>{person.name}</b>
           {josa(person.name, "은/는")} 여기로 연결됩니다. 단톡방 전체에 대한
-          내용은 <WikiLink href={ROOM_PATH}>{room.roomTitle}</WikiLink> 문서를
+          내용은 <WikiLink href={routes.room}>{room.roomTitle}</WikiLink> 문서를
           참고하십시오.
         </WikiNotice>
       </div>
@@ -230,7 +239,7 @@ function PersonDocument({
             rows={[
               {
                 label: "소속",
-                value: <WikiLink href={ROOM_PATH}>{room.roomTitle}</WikiLink>,
+                value: <WikiLink href={routes.room}>{room.roomTitle}</WikiLink>,
               },
               {
                 label: "발언량",
@@ -270,7 +279,7 @@ function PersonDocument({
         ) : (
           <>
             <p>
-              <WikiLink href={ROOM_PATH}>{room.roomTitle}</WikiLink>의 구성원. 총{" "}
+              <WikiLink href={routes.room}>{room.roomTitle}</WikiLink>의 구성원. 총{" "}
               {person.messageCount.toLocaleString()}
               개의 메시지를 남겨 전체 대화의 {person.share}%를 차지하고 있으며,
               단톡방 내 발언량 순위는 {person.rank}
@@ -295,7 +304,7 @@ function PersonDocument({
                 <>
                   {" "}
                   가장 자주 말을 받아 주는 상대는{" "}
-                  <WikiLink href={personPath(topPartner.name)}>
+                  <WikiLink href={routes.person(topPartner.name)}>
                     {topPartner.name}
                   </WikiLink>
                   {withRo(topPartner.name)}, 두 사람의 대화가 단톡방의 상당 부분을
@@ -393,7 +402,7 @@ function PersonDocument({
                   className="grid grid-cols-[100px_1fr_auto] items-center gap-3 sm:grid-cols-[140px_1fr_auto]"
                 >
                   <WikiLink
-                    href={personPath(partner.name)}
+                    href={routes.person(partner.name)}
                     className="truncate text-left"
                   >
                     {partner.name}

@@ -4,19 +4,20 @@ import { useMutation } from "@tanstack/react-query";
 import { CheckIcon, Share2Icon } from "lucide-react";
 import { useState } from "react";
 
+import { createShareLinkAction } from "@/services/sharedWiki/createShareLinkAction";
 import { useWikiStore } from "@/store/wikiStore";
-import { sharedWikiPath } from "@/utils/wikiRoutes";
-import { createShareLinkAction } from "@/screens/room/createShareLinkAction";
+import { createWikiRoutes } from "@/utils/wikiRoutes";
+
+type ShareLinkButtonProps = {
+  /** 있으면 이 인물 문서 링크를, 없으면 단톡방 문서 링크를 공유한다. */
+  personName?: string;
+};
 
 type ShareStatus =
   | { kind: "idle" }
   /** copied: null이면 복사 시도 중, false면 직접 복사해야 함 */
   | { kind: "ready"; url: string; copied: boolean | null }
   | { kind: "error"; message: string };
-
-function toShareUrl(code: string) {
-  return new URL(sharedWikiPath(code), window.location.origin).toString();
-}
 
 /** 클립보드 권한이 없거나 거부되면 false. 권한 요청 등으로 끝나지 않을 수 있으므로 결과를 기다려 UI를 막지 않는다. */
 async function copyText(text: string) {
@@ -28,15 +29,30 @@ async function copyText(text: string) {
   }
 }
 
+/** 모바일 등에서 OS 공유 시트를 지원하는지. 버튼을 누른 뒤에만 그리는 안내 안에서 호출하므로 서버 렌더와 어긋나지 않는다. */
+function canUseShareSheet() {
+  return typeof navigator !== "undefined" && typeof navigator.share === "function";
+}
+
+async function openShareSheet(title: string, url: string) {
+  try {
+    await navigator.share({ title, url });
+  } catch {
+    // 사용자가 공유 시트를 닫은 경우(AbortError)를 포함해, 링크는 이미 화면에 있으므로 따로 안내하지 않는다.
+  }
+}
+
 /**
- * 단톡방 문서를 1일짜리 공유 링크로 만든다.
+ * 단톡방 문서 전체를 1일짜리 공유 링크로 만든다. 인물 문서에서 눌러도 저장하는 것은 문서 전체이고, 링크만 그 인물 문서를 가리킨다.
  * 이미 공유된 문서(공유 링크로 들어왔거나 한 번 만든 경우)는 서버에 다시 저장하지 않고 링크만 복사한다.
  */
-export function ShareLinkButton() {
+export function ShareLinkButton({ personName }: ShareLinkButtonProps) {
   const generated = useWikiStore((state) => state.generated);
   const shareCode = useWikiStore((state) => state.shareCode);
   const setShareCode = useWikiStore((state) => state.setShareCode);
   const [status, setStatus] = useState<ShareStatus>({ kind: "idle" });
+
+  const shareTitle = `${personName ?? generated?.room.roomTitle ?? "문서"} | 단톡위키`;
 
   const { mutate, isPending } = useMutation({
     mutationFn: createShareLinkAction,
@@ -56,6 +72,12 @@ export function ShareLinkButton() {
       });
     },
   });
+
+  function toShareUrl(code: string) {
+    const routes = createWikiRoutes(code);
+    const path = personName ? routes.person(personName) : routes.room;
+    return new URL(path, window.location.origin).toString();
+  }
 
   /** 링크는 바로 보여 주고, 클립보드 복사 결과는 끝나는 대로 덧붙인다. */
   function showLink(code: string) {
@@ -116,6 +138,15 @@ export function ShareLinkButton() {
                 onFocus={(event) => event.currentTarget.select()}
                 className="mt-1.5 w-full rounded-[4px] border border-line px-2 py-1"
               />
+              {canUseShareSheet() && (
+                <button
+                  type="button"
+                  onClick={() => void openShareSheet(shareTitle, status.url)}
+                  className="mt-2 w-full rounded-[4px] border-2 border-ink px-2 py-1.5 font-bold transition-colors duration-150 hover:bg-paper focus-visible:bg-paper focus-visible:outline-none"
+                >
+                  다른 앱으로 보내기
+                </button>
+              )}
             </>
           )}
         </div>

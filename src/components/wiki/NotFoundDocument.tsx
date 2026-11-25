@@ -1,7 +1,8 @@
 "use client";
 
+import { useWikiRoutes } from "@/hooks/useWikiRoutes";
 import { useWikiStore } from "@/store/wikiStore";
-import { HOME_PATH, ROOM_PATH, personPath } from "@/utils/wikiRoutes";
+import { HOME_PATH } from "@/utils/wikiRoutes";
 import { DocHeader } from "@/components/wiki/DocHeader";
 import { WikiLink } from "@/components/wiki/WikiLink";
 
@@ -12,6 +13,7 @@ type NotFoundDocumentProps = {
 /** 검색 결과가 없거나, 생성된 문서 없이 단톡방·인물 문서 URL로 들어왔을 때 보여 준다. */
 export function NotFoundDocument({ query }: NotFoundDocumentProps) {
   const room = useWikiStore((state) => state.generated?.room ?? null);
+  const routes = useWikiRoutes();
 
   return (
     <>
@@ -28,11 +30,11 @@ export function NotFoundDocument({ query }: NotFoundDocumentProps) {
             <p className="mt-4">이 단톡방에 있는 문서:</p>
             <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>
-                <WikiLink href={ROOM_PATH}>{room.roomTitle}</WikiLink>
+                <WikiLink href={routes.room}>{room.roomTitle}</WikiLink>
               </li>
               {room.participants.map((person) => (
                 <li key={person.name}>
-                  <WikiLink href={personPath(person.name)}>
+                  <WikiLink href={routes.person(person.name)}>
                     {person.name}
                   </WikiLink>
                 </li>
