@@ -91,3 +91,7 @@ src/
 - Playwright 실패 증거와 AI 검증: [웹 테스트 실패 증거](./docs/dev-guidelines/WEB_TEST_FAILURE_EVIDENCE.md)
 
 GitHub 저장소는 [`minhoo03/grouptalk-wiki`](https://github.com/minhoo03/grouptalk-wiki)이며, 기본 브랜치는 `main`이다.
+
+## 배포
+
+Vercel 프로젝트가 이 저장소에 연결되어 있다. `main`에 push 또는 PR merge가 발생하면 자동으로 배포된다.
