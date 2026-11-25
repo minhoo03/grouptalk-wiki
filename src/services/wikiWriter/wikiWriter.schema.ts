@@ -30,8 +30,48 @@ export function isItemSection(key: string) {
   return (ITEM_SECTION_KEYS as readonly string[]).includes(key);
 }
 
-/** 사건 후보·첫 기록·마지막 기록 장면까지 담는다. 줄 수가 늘어도 요청 수는 같다. */
-export const EXCERPT_LIMIT = 500;
+/**
+ * AI가 표 칸을 채우는 하위 문단("섹션/하위 문단" key). 규칙 기반 표는 서술로 바뀌지 않고 남는다.
+ * AI는 하위 문단의 `rows`로 답한다. 행 하나 = [첫 칸(행 이름), ...columns 순서의 값].
+ * - columns: AI가 채우는 열 번호(0부터, 첫 칸 제외)
+ * - keepOnlyFilled: AI가 돌려준 행만 남긴다. 후보 중 방 고유 유행어·외부 밈만 고르는 표에 쓴다.
+ * - head: 있으면 규칙 기반 행을 버리고 AI 행으로 표 전체를 만든다. 행 하나 = head 순서의 모든 칸.
+ */
+export type AiTableSpec = {
+  columns: number[];
+  keepOnlyFilled?: boolean;
+  head?: readonly string[];
+};
+
+export const AI_TABLE_SUBS: Record<string, AiTableSpec> = {
+  "members/current": { columns: [3] },
+  "members/former": { columns: [3] },
+  "members/roles": { columns: [1, 2] },
+  "slang/top": { columns: [1], keepOnlyFilled: true },
+  "slang/nicknames": {
+    columns: [],
+    head: ["멤버", "불린 이름·별명", "주로 부르는 사람", "유래"],
+  },
+  "slang/emoji": { columns: [3] },
+  "slang/laugh": { columns: [1, 2] },
+  "slang/faded": { columns: [], keepOnlyFilled: true },
+  "slang/vanished": { columns: [], keepOnlyFilled: true },
+};
+
+/** AI가 서술을 써도 규칙 기반 표를 남기는 하위 문단(표 칸은 채우지 않는다) */
+export const KEEP_TABLE_SUBS: ReadonlySet<string> = new Set(["members/roster"]);
+
+/** 하위 문단 아래에 AI가 소제목(==== 소제목 ====)을 붙이는 하위 문단. 응답의 `parts`로 온다. */
+export const AI_PARTS_SUBS: ReadonlySet<string> = new Set([
+  "members/traits",
+  "members/chemistry",
+  "members/unexpected",
+  "slang/origin",
+  "slang/habits",
+]);
+
+/** 사건 후보·첫 기록·마지막 기록·케미·유행어 장면까지 담는다. 줄 수가 늘어도 요청 수는 같다. */
+export const EXCERPT_LIMIT = 900;
 /**
  * 묶음(Gemini 호출 1회) 나누기. 무료 등급의 실제 제약은 하루 요청 수(모델별 20회)라
  * 응답이 길어지더라도 요청 수를 줄인다. 관련 섹션을 한 요청에서 쓰면 섹션끼리 내용이 덜 겹친다.
@@ -39,9 +79,31 @@ export const EXCERPT_LIMIT = 500;
  */
 export const ROOM_JOB_GROUPS: readonly (readonly string[])[] = [
   ["overview", "naming", "history"],
-  ["members", "culture", "slang", "episodes", "controversy"],
+  // 멤버와 상징·유행어는 멤버별·유행어별 소제목과 표 칸까지 써서 응답이 길다. 따로 보낸다.
+  ["members"],
+  ["culture", "slang"],
+  ["episodes", "controversy"],
   ["hallOfFame", "trivia"],
 ];
+/**
+ * 섹션마다 필요한 발췌 종류(Excerpt.tag). "plain"은 태그 없는 발췌, 곧 시기별 장면과 구성원별 한 줄 발췌다.
+ * 묶음에는 그 묶음 섹션들이 필요한 발췌만 보내 입력 토큰을 줄인다(splitProseJobs).
+ * 여기 없는 섹션(명예의 전당·여담)은 방 전체에서 장면을 고르므로 모든 발췌를 받는다.
+ * 섹션 프롬프트가 새 발췌 종류를 근거로 쓰게 되면 여기에도 추가해야 한다.
+ */
+export type ExcerptKind = NonNullable<Excerpt["tag"]> | "plain";
+
+export const SECTION_EXCERPTS: Readonly<Record<string, readonly ExcerptKind[]>> = {
+  overview: ["opening", "closing", "plain"],
+  naming: ["naming", "plain"],
+  history: ["opening", "closing", "event", "plain"],
+  members: ["pair", "address", "plain"],
+  culture: ["custom", "emoji", "plain"],
+  slang: ["slang", "address", "emoji", "origin", "lastUse", "laugh", "plain"],
+  episodes: ["event", "origin", "laugh", "plain"],
+  controversy: ["event", "plain"],
+};
+
 /** 명예의 전당은 구성원 수만큼 하위 문단이 생기므로 이 인원씩 끊는다. */
 export const HALL_OF_FAME_PER_JOB = 20;
 /** 서버가 받는 묶음 하나의 하위 문단 상한. 보통의 방은 묶음당 10~20개다. */
@@ -66,9 +128,27 @@ export const excerptSchema = z.object({
    * naming: 방 이름이나 방을 가리키는 표현이 나온 한 줄 발췌(명칭 섹션의 근거).
    * custom: 사과·지적·생일·정산·도착 인증처럼 관행·규칙의 단서가 되는 한 줄 발췌(방의 성격과 문화 섹션의 근거).
    * event: 해명·소문·정정·긴 침묵 뒤 대화처럼 앞뒤를 봐야 이해되는 사건 후보 장면(에피소드·논란 섹션의 근거).
+   * pair: 친밀도가 높거나 의외인 두 사람만 주고받은 연속 대화(멤버 간 케미·의외의 조합의 근거).
+   * origin: 유행어가 기록에서 처음 나온 장면. lastUse: 사라진 유행어가 마지막으로 쓰인 장면.
+   * laugh: 가장 길게 웃은 장면.
+   * slang: 유행어 후보가 실제로 쓰인 한 줄 발췌. address: 서로를 부르거나 가리킨 한 줄 발췌.
+   * emoji: 이모지가 쓰인 한 줄 발췌. (모두 상징·유행어 섹션의 근거)
    */
   tag: z
-    .enum(["opening", "closing", "naming", "custom", "event"])
+    .enum([
+      "opening",
+      "closing",
+      "naming",
+      "custom",
+      "event",
+      "pair",
+      "origin",
+      "lastUse",
+      "laugh",
+      "slang",
+      "address",
+      "emoji",
+    ])
     .nullable()
     .optional(),
 });
@@ -93,6 +173,11 @@ export const roomProseRequestSchema = z.object({
     )
     .max(40),
   excerpts: z.array(excerptSchema).max(EXCERPT_LIMIT),
+  /**
+   * 앞 순서 묶음이 이미 다룬 이야기(사건 제목·인용). 같은 일화를 여러 섹션이 되풀이하지 않게 한다.
+   * 브라우저가 묶음을 순서대로 보내며 채운다(writeAiProse의 COVER_ORDER).
+   */
+  covered: z.array(z.string().max(300)).max(80).optional(),
 });
 
 export const personProseRequestSchema = z.object({
@@ -144,8 +229,26 @@ export const proseJobSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
-/** 역사 시기(본문 + 대표 장면 + 전환 요인)와 첫 기록(장면 + 중략 + 장면 + 해설)이 4개를 넘을 수 있다. */
-const paragraphs = z.array(z.string().max(2000)).max(6);
+/**
+ * 하위 문단 하나의 문단 수 상한. 역사 시기(본문 + 대표 장면 + 전환 요인), 첫 기록(장면 + 중략 + 장면 + 해설),
+ * 멤버별 특징(정체성·스타일·화제·에피소드·장면·숫자)이 6개 안팎이다.
+ */
+export const PARAGRAPHS_LIMIT = 8;
+const PARAGRAPH_CHARS = 2000;
+
+/**
+ * 모델이 상한을 조금 넘겨도 응답 전체를 버리지 않고 잘라서 쓴다.
+ * 한 하위 문단이 길다는 이유로 묶음 전체(섹션 여러 개)가 통계 문장으로 돌아가는 것을 막는다.
+ */
+const paragraphs = z
+  .array(z.string())
+  .transform((list) =>
+    list
+      .slice(0, PARAGRAPHS_LIMIT)
+      .map((text) =>
+        text.length > PARAGRAPH_CHARS ? `${text.slice(0, PARAGRAPH_CHARS)}…` : text,
+      ),
+  );
 
 /**
  * 개요 > 기본 정보 표에서 대화 내용을 읽어야 채울 수 있는 칸.
@@ -179,10 +282,12 @@ export const roomProseResultSchema = z.object({
           title: z.string().optional(),
           /** 항목 섹션: 이 사건이 오간 날짜(YYYY-MM-DD). 다른 문단의 [[#날짜|…]] 링크가 이 항목을 찾는다. */
           dates: z.array(z.string()).optional(),
-          /** 항목 섹션: 해명·여파처럼 항목 아래에 붙는 하위 문단 */
+          /** 항목 섹션의 해명·여파, AI_PARTS_SUBS의 소제목(멤버별·쌍별·유행어별) */
           parts: z
             .array(z.object({ title: z.string(), paragraphs }))
             .optional(),
+          /** AI_TABLE_SUBS의 표 칸 */
+          rows: z.array(z.array(z.string())).optional(),
           paragraphs,
         }),
       ),

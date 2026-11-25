@@ -59,6 +59,7 @@ export function PersonScreen({ name }: PersonScreenProps) {
       room={generated.room}
       person={person}
       prose={generated.personProse[person.name] ?? EMPTY_PROSE}
+      aiMissing={generated.aiMissingPeople.includes(person.name)}
     />
   );
 }
@@ -68,6 +69,8 @@ type PersonDocumentProps = {
   person: PersonProfile;
   /** AI가 쓴 섹션별 블록과 각주. 없는 섹션은 규칙 기반 문장을 보여 준다. */
   prose: PersonProseEntry;
+  /** AI 서술을 요청했지만 실패해 통계로만 작성됐는지 */
+  aiMissing: boolean;
 };
 
 const EMPTY_PROSE: PersonProseEntry = { sections: {}, notes: [] };
@@ -107,7 +110,12 @@ function roomSectionLink(room: RoomProfile, anchorId: string, title: string) {
   return { label: `${room.roomTitle} › ${title}`, anchorId, href: ROOM_PATH };
 }
 
-function PersonDocument({ room, person, prose }: PersonDocumentProps) {
+function PersonDocument({
+  room,
+  person,
+  prose,
+  aiMissing,
+}: PersonDocumentProps) {
   const topCatchphrase = person.catchphrases[0];
   const topPartner = person.replyPartners[0];
   const mainBadge = person.badges[0];
@@ -174,7 +182,9 @@ function PersonDocument({ room, person, prose }: PersonDocumentProps) {
 
       <div className="mt-5 space-y-3">
         <WikiNotice kind="lock">
-          이 문서는 대화 기록을 바탕으로 자동 작성된 문서입니다.
+          {aiMissing
+            ? "AI 서술을 불러오지 못해 이 문서는 대화 기록에서 계산한 통계로만 작성되었습니다."
+            : "이 문서는 대화 기록을 바탕으로 자동 작성된 문서입니다."}
         </WikiNotice>
         <WikiNotice kind="redirect">
           <b>{person.name}</b>

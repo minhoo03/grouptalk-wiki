@@ -4,6 +4,9 @@ import {
   PEOPLE_PER_JOB,
   ROOM_JOB_GROUPS,
   ROOM_SUBS_MAX_PER_JOB,
+  SECTION_EXCERPTS,
+  type Excerpt,
+  type ExcerptKind,
   type PreferredModel,
   type ProseJob,
   type RoomProseRequest,
@@ -11,6 +14,35 @@ import {
 } from "@/services/wikiWriter/wikiWriter.schema";
 
 type RoomSection = RoomProseRequest["sections"][number];
+
+const kindOf = (excerpt: Excerpt): ExcerptKind => excerpt.tag ?? "plain";
+
+/**
+ * 단톡방 묶음에 보낼 발췌. 묶음 섹션들이 필요한 종류(SECTION_EXCERPTS)만 남긴다.
+ * 필요 종류가 정해지지 않은 섹션이 하나라도 있으면 전부 보낸다.
+ * 인용 검증도 이 발췌로 하므로, AI는 받은 발췌만 인용할 수 있다.
+ */
+function roomExcerpts(excerpts: Excerpt[], sections: RoomSection[]): Excerpt[] {
+  const kinds = new Set<ExcerptKind>();
+  for (const section of sections) {
+    const needs = SECTION_EXCERPTS[section.key];
+    if (!needs) return excerpts;
+    needs.forEach((kind) => kinds.add(kind));
+  }
+  return excerpts.filter((excerpt) => kinds.has(kindOf(excerpt)));
+}
+
+/** 인물 묶음에 보낼 발췌: 그 묶음 사람들의 한 줄 발췌와, 그 사람들이 말한 장면 */
+function personExcerpts(excerpts: Excerpt[], people: Set<string>): Excerpt[] {
+  const scenes = new Set(
+    excerpts
+      .filter((e) => e.scene !== null && people.has(e.author))
+      .map((e) => e.scene),
+  );
+  return excerpts.filter((e) =>
+    e.scene === null ? people.has(e.author) : scenes.has(e.scene),
+  );
+}
 
 function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
@@ -90,14 +122,25 @@ export function splitProseJobs({ room, person }: WikiProseRequest): ProseJob[] {
     (sections, index) => ({
       kind: "room",
       preferredModel: modelFor(index),
-      request: { ...room, sections },
+      request: {
+        ...room,
+        sections,
+        excerpts: roomExcerpts(room.excerpts, sections),
+      },
     }),
   );
   const personJobs: ProseJob[] = chunk(person.people, PEOPLE_PER_JOB).map(
     (people, index) => ({
       kind: "person",
       preferredModel: modelFor(roomJobs.length + index),
-      request: { ...person, people },
+      request: {
+        ...person,
+        people,
+        excerpts: personExcerpts(
+          person.excerpts,
+          new Set(people.map((p) => p.name)),
+        ),
+      },
     }),
   );
   return [...roomJobs, ...personJobs];

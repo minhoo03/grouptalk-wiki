@@ -26,7 +26,9 @@ import {
  *    남는 자리는 전체 기간에 고르게 흩어진 지점으로 채운다.
  * 2) 방 이름 발췌: 방 이름이나 "우리 방"처럼 방을 가리키는 표현이 나온 메시지. 명칭 섹션의 근거다.
  * 3) 관행 단서 발췌: 사과·지적·생일·정산·도착 인증·인사처럼 반복되는 관행의 단서가 될 만한 메시지.
- * 4) 한 줄 발췌: 장면에 잘 안 나온 구성원도 인물 문서 자료가 있도록 구성원별로 고르게 고른다.
+ * 4) 멤버·유행어 근거(focus): 친밀도 높은 쌍이 둘만 주고받은 대화, 유행어의 첫 등장·마지막 사용 장면,
+ *    가장 길게 웃은 장면, 유행어·호칭·이모지가 쓰인 한 줄 발췌. 통계로 고른 후보를 AI가 실제 쓰임으로 확인한다.
+ * 5) 한 줄 발췌: 장면에 잘 안 나온 구성원도 인물 문서 자료가 있도록 구성원별로 고르게 고른다.
  *
  * 개인정보(전화번호, 계좌번호, 이메일, 주민번호)와 링크는 브라우저를 떠나기 전에 가린다.
  */
@@ -51,6 +53,20 @@ const CUSTOM_LINES = 24;
 /** 관행·규칙의 단서가 될 만한 표현. 후보일 뿐이고, 실제 관행인지는 AI가 날짜와 반응을 보고 판단한다. */
 const CUSTOM_CUE =
   /읽씹|안\s?읽|미안|ㅈㅅ|죄송|선\s?넘|생일|생축|정산|입금|송금|n빵|엔빵|도착|출발|출근|퇴근|잘\s?자|굿밤|좋은\s?아침|ㄱㅁ|고마워/;
+/** 두 사람만 주고받은 대화: 이 줄 수 이상 이어진 구간을 쌍마다 PAIR_SCENES개까지, 장면당 PAIR_MAX_LINES줄 */
+const PAIR_MIN_LINES = 6;
+const PAIR_MAX_LINES = 10;
+const PAIR_SCENES = 2;
+const ORIGIN_BEFORE = 5;
+const ORIGIN_AFTER = 8;
+const LAST_USE_BEFORE = 3;
+const LAST_USE_AFTER = 2;
+const LAUGH_BEFORE = 4;
+const LAUGH_AFTER = 2;
+const SLANG_LINES_EACH = 3;
+const SLANG_LINES = 45;
+const ADDRESS_LINES = 24;
+const EMOJI_LINES_EACH = 3;
 const SCENE_BEFORE = 3;
 const SCENE_AFTER = 5;
 /** 역사 문단의 최대 시기 수(sectionsIntro의 MAX_ERAS)와 맞춘다. */
@@ -143,6 +159,32 @@ function busyDayAnchorsByPeriod(messages: ChatMessage[]): number[] {
 
 type SceneRange = { start: number; end: number; tag: Excerpt["tag"] };
 
+/** 멤버·유행어 섹션이 근거로 볼 대화. 값은 방 문서를 만들 때 계산한 통계에서 온다(buildRoomWiki). */
+export type ExcerptFocus = {
+  /** 친밀도 상위·의외의 조합 쌍 */
+  pairs: [string, string][];
+  /** 유행어 후보 표현 */
+  slangTexts: string[];
+  /** 유행어가 처음 나온 메시지 index */
+  originIndexes: number[];
+  /** 사라진 유행어가 마지막으로 쓰인 메시지 index */
+  lastUseIndexes: number[];
+  /** 가장 길게 웃은 메시지 index */
+  laughIndex: number | null;
+  emojis: string[];
+  addressTerms: string[];
+};
+
+export const NO_FOCUS: ExcerptFocus = {
+  pairs: [],
+  slangTexts: [],
+  originIndexes: [],
+  lastUseIndexes: [],
+  laughIndex: null,
+  emojis: [],
+  addressTerms: [],
+};
+
 const overlaps = (ranges: SceneRange[], start: number, end: number) =>
   ranges.some((r) => start < r.end && r.start < end);
 
@@ -223,10 +265,74 @@ function eventRanges(
   return ranges;
 }
 
-function pickSceneRanges(messages: ChatMessage[]): SceneRange[] {
+/** a와 b 둘만 번갈아 말한 구간 중 긴 것부터 PAIR_SCENES개 */
+function pairRanges(
+  messages: ChatMessage[],
+  [a, b]: [string, string],
+  reserved: SceneRange[],
+): SceneRange[] {
+  const segments: { start: number; end: number }[] = [];
+  let start = -1;
+  const close = (end: number) => {
+    if (start < 0) return;
+    const authors = new Set(messages.slice(start, end).map((m) => m.author));
+    if (end - start >= PAIR_MIN_LINES && authors.size === 2)
+      segments.push({ start, end: Math.min(end, start + PAIR_MAX_LINES) });
+    start = -1;
+  };
+  messages.forEach((message, index) => {
+    const inPair = message.author === a || message.author === b;
+    if (inPair && start < 0) start = index;
+    if (!inPair) close(index);
+  });
+  close(messages.length);
+  const picked: SceneRange[] = [];
+  for (const segment of segments.sort(
+    (x, y) => y.end - y.start - (x.end - x.start),
+  )) {
+    if (picked.length >= PAIR_SCENES) break;
+    if (!overlaps([...reserved, ...picked], segment.start, segment.end))
+      picked.push({ ...segment, tag: "pair" });
+  }
+  return picked;
+}
+
+function focusRanges(
+  messages: ChatMessage[],
+  focus: ExcerptFocus,
+  reserved: SceneRange[],
+): SceneRange[] {
+  const ranges: SceneRange[] = [];
+  const add = (
+    index: number,
+    before: number,
+    after: number,
+    tag: Excerpt["tag"],
+  ) => {
+    const start = Math.max(0, index - before);
+    const end = Math.min(messages.length, index + after + 1);
+    if (!overlaps([...reserved, ...ranges], start, end))
+      ranges.push({ start, end, tag });
+  };
+  focus.originIndexes.forEach((i) => add(i, ORIGIN_BEFORE, ORIGIN_AFTER, "origin"));
+  focus.lastUseIndexes.forEach((i) =>
+    add(i, LAST_USE_BEFORE, LAST_USE_AFTER, "lastUse"),
+  );
+  if (focus.laughIndex !== null)
+    add(focus.laughIndex, LAUGH_BEFORE, LAUGH_AFTER, "laugh");
+  for (const pair of focus.pairs)
+    ranges.push(...pairRanges(messages, pair, [...reserved, ...ranges]));
+  return ranges;
+}
+
+function pickSceneRanges(
+  messages: ChatMessage[],
+  focus: ExcerptFocus,
+): SceneRange[] {
   const opening = openingRanges(messages);
   const edges = [...opening, ...closingRange(messages, opening)];
-  const reserved = [...edges, ...eventRanges(messages, edges)];
+  const withEvents = [...edges, ...eventRanges(messages, edges)];
+  const reserved = [...withEvents, ...focusRanges(messages, focus, withEvents)];
 
   const evenAnchors = pickEvenly(
     messages.map((_, index) => index),
@@ -272,14 +378,79 @@ function customIndexes(messages: ChatMessage[], used: Set<number>): number[] {
   return pickEvenly(indexes, CUSTOM_LINES);
 }
 
+/** 조건에 맞는 메시지를 기록 전체에서 고르게 고른다. */
+function matchingIndexes(
+  messages: ChatMessage[],
+  used: Set<number>,
+  test: (text: string) => boolean,
+  count: number,
+): number[] {
+  const indexes = messages.flatMap((message, index) =>
+    !used.has(index) && classify(message.text) === "text" && test(message.text)
+      ? [index]
+      : [],
+  );
+  return pickEvenly(indexes, count);
+}
+
+function focusSingles(
+  messages: ChatMessage[],
+  focus: ExcerptFocus,
+  used: Set<number>,
+): Excerpt[] {
+  const picked: { index: number; tag: Excerpt["tag"] }[] = [];
+  const take = (indexes: number[], tag: Excerpt["tag"]) =>
+    indexes.forEach((index) => {
+      used.add(index);
+      picked.push({ index, tag });
+    });
+
+  let slangBudget = SLANG_LINES;
+  for (const text of focus.slangTexts) {
+    if (slangBudget <= 0) break;
+    const indexes = matchingIndexes(
+      messages,
+      used,
+      (t) => t.includes(text),
+      Math.min(SLANG_LINES_EACH, slangBudget),
+    );
+    slangBudget -= indexes.length;
+    take(indexes, "slang");
+  }
+  if (focus.addressTerms.length)
+    take(
+      matchingIndexes(
+        messages,
+        used,
+        (t) => focus.addressTerms.some((term) => t.includes(term)),
+        ADDRESS_LINES,
+      ),
+      "address",
+    );
+  for (const emoji of focus.emojis)
+    take(
+      matchingIndexes(messages, used, (t) => t.includes(emoji), EMOJI_LINES_EACH),
+      "emoji",
+    );
+
+  return picked.map(({ index, tag }) => ({
+    author: messages[index].author,
+    date: messages[index].dateKey,
+    text: toExcerptText(messages[index]),
+    scene: null,
+    tag,
+  }));
+}
+
 export function sampleExcerpts(
   messages: ChatMessage[],
   roomTitle: string,
+  focus: ExcerptFocus = NO_FOCUS,
 ): Excerpt[] {
   const used = new Set<number>();
   const scenes: Excerpt[] = [];
 
-  pickSceneRanges(messages).forEach(({ start, end, tag }, scene) => {
+  pickSceneRanges(messages, focus).forEach(({ start, end, tag }, scene) => {
     for (let index = start; index < end; index += 1) {
       const message = messages[index];
       used.add(index);
@@ -317,6 +488,8 @@ export function sampleExcerpts(
     };
   });
 
+  const focused = focusSingles(messages, focus, used);
+
   const byAuthor = new Map<string, number[]>();
   messages.forEach((message, index) => {
     if (used.has(index) || !isGoodSingleLine(message)) return;
@@ -327,7 +500,11 @@ export function sampleExcerpts(
 
   const singlesLimit = Math.max(
     0,
-    EXCERPT_LIMIT - scenes.length - naming.length - custom.length,
+    EXCERPT_LIMIT -
+      scenes.length -
+      naming.length -
+      custom.length -
+      focused.length,
   );
   const perAuthor = Math.max(
     MIN_PER_AUTHOR,
@@ -344,7 +521,7 @@ export function sampleExcerpts(
       scene: null,
     }));
 
-  return [...scenes, ...naming, ...custom, ...singles].slice(
+  return [...scenes, ...naming, ...custom, ...focused, ...singles].slice(
     0,
     EXCERPT_LIMIT,
   );

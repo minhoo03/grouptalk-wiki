@@ -80,9 +80,11 @@ export function RoomScreen() {
 
       <div className="mt-5 space-y-3">
         <WikiNotice kind="lock">
-          {generated.aiWritten
-            ? "이 문서는 대화 기록에서 계산한 통계와 일부 발언을 바탕으로 AI가 서술했습니다. 표와 그래프의 숫자는 기록에서 직접 계산한 값입니다."
-            : "이 문서는 업로드한 대화 기록만으로 자동 작성되었습니다. 기록으로 확인할 수 없는 문단은 생략되었습니다."}
+          {!generated.aiWritten
+            ? "AI 서술을 불러오지 못해 이 문서는 대화 기록에서 계산한 통계로만 작성되었습니다."
+            : wiki.sections.some((section) => section.aiMissing)
+              ? "이 문서는 대화 기록의 통계와 일부 발언을 바탕으로 AI가 서술했습니다. 일부 섹션은 AI 서술을 불러오지 못해 통계로만 작성되었습니다."
+              : "이 문서는 대화 기록의 통계와 일부 발언을 바탕으로 AI가 서술했습니다. 표와 그래프의 숫자는 기록에서 직접 계산한 값입니다."}
         </WikiNotice>
         {leader && (
           <WikiNotice kind="redirect">
@@ -140,6 +142,11 @@ export function RoomScreen() {
           title={section.title}
         >
           <div className="space-y-8">
+            {section.aiMissing && (
+              <WikiNotice kind="lock">
+                AI 서술을 불러오지 못해 이 섹션은 통계로만 작성되었습니다.
+              </WikiNotice>
+            )}
             {section.subs.map((sub) => (
               <div key={sub.id} id={sub.id} className="scroll-mt-20">
                 {sub.title && (

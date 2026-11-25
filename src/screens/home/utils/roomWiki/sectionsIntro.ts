@@ -8,6 +8,7 @@ import {
   b,
   day,
   del,
+  facts,
   link,
   muted,
   n,
@@ -96,8 +97,11 @@ export function overviewSection(ctx: BuildCtx): WikiSec | null {
       title: "한 줄 소개",
       // AI가 쓰지 못하면 남는 문장. AI는 [관계] + [핵심 행위] + [정의] 공식으로 다시 쓴다.
       build: () => [
-        p(b(`${groupName}이 ${n(ins.total)}개의 메시지로 일상을 나눠 온 단톡방`)),
-        p(del("요약하면 결국 수다방이다")),
+        // AI가 실패했을 때만 보인다(섹션에 "통계로만 작성" 안내가 붙는다). 서술인 척하지 않고 사실만 적는다.
+        p(
+          b(`${groupName}`),
+          ` · 메시지 ${n(ins.total)}개 · ${day(ins.startKey)} ~ ${day(ins.endKey)}`,
+        ),
       ],
     },
     {
@@ -211,7 +215,7 @@ export function namingSection(ctx: BuildCtx): WikiSec | null {
           blocks.push(
             p(
               `현재 이름 '${title}'${josa(title, "은/는")} ${day(naming.dateKey)}에 `,
-              ...who(naming.author, "이/가"),
+              ...(naming.author ? who(naming.author, "이/가") : []),
               " 붙인 이름이다.",
             ),
           );
@@ -231,12 +235,35 @@ export function namingSection(ctx: BuildCtx): WikiSec | null {
       },
     },
     {
+      key: "renames",
+      title: "역대 방 이름",
+      // 시스템 메시지("방 이름을 '…'으로 변경")로 확인한 이력이라 AI가 고쳐 쓰지 않는다(FACTS_ONLY_SUBS).
+      build: () =>
+        ins.renames.length
+          ? [
+              table(
+                ["날짜", "방 이름", "변경한 사람"],
+                [
+                  ...ins.renames.map((r): Rich[] => [
+                    [day(r.dateKey)],
+                    [r.name],
+                    r.author ? [link(r.author)] : ["기록 없음"],
+                  ]),
+                  [["현재"], [title], ["-"]],
+                ],
+              ),
+            ]
+          : // 바뀐 적이 없으면 하위 문단을 두지 않는다. "없다"는 문장은 독자에게 정보가 아니다.
+            null,
+    },
+    {
       key: "aliases",
       title: "별칭 및 줄임말",
-      // "이 방", "우리 방", "여기" 같은 일반 지칭은 별칭이 아니다. 고유한 별칭은 AI가 대화에서 찾는다.
+      // "이 방", "우리 방", "여기" 같은 일반 지칭은 별칭이 아니다. 고유한 별칭은 AI가 대화에서 찾고,
+      // 찾지 못하면 이 하위 문단은 문서에서 빠진다(applyProse).
       build: () => [
-        p(
-          "단톡방을 가리키는 고유한 별칭이나 줄임말은 자동 분석으로는 확인되지 않았다.",
+        facts(
+          "앱은 별칭을 찾지 않았다. 방 이름·방 지칭 발언에서 이 방만의 별칭을 찾는다.",
         ),
       ],
     },

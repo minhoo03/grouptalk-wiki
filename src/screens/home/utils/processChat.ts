@@ -143,8 +143,12 @@ export async function processChat(
     if (messages.length === 0) {
       throw new ChatLoadError("제외하고 나니 분석할 메시지가 남지 않았어요.", "parse");
     }
-    const cleaned = { ...parsed, messages };
     const excludedBots = new Set(decisions.excludedBots);
+    // 봇의 입장·퇴장은 인원 변천사에 넣지 않는다.
+    const events = parsed.events.filter(
+      (e) => !excludedBots.has(e.name) || e.type === "rename",
+    );
+    const cleaned = { ...parsed, messages, events };
     const bots = {
       excluded: decisions.excludedBots,
       kept: candidates.bots
@@ -170,8 +174,8 @@ export async function processChat(
         ),
       signal,
     );
-    const wiki = await runSliced(
-      buildRoomWikiSteps(room, messages, bots),
+    const { wiki, focus } = await runSliced(
+      buildRoomWikiSteps(room, messages, bots, events),
       (f) =>
         report(
           60 + f * 39,
@@ -184,7 +188,7 @@ export async function processChat(
     );
 
     // 전체 메시지는 여기서 버리고, AI 서술에 쓸 대표 발언만 남긴다.
-    const excerpts = sampleExcerpts(messages, cleaned.roomTitle);
+    const excerpts = sampleExcerpts(messages, cleaned.roomTitle, focus);
 
     report(100, "done");
     await yieldToMain();
