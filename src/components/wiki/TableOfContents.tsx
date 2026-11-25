@@ -14,14 +14,17 @@ type TableOfContentsProps = {
 };
 
 const INDENT_PER_DEPTH_PX = 16;
+/** 문단 번호를 누르면 돌아오는 목차 위치 */
+export const TOC_ANCHOR_ID = "toc";
 
 export function TableOfContents({ items }: TableOfContentsProps) {
   const [isOpen, setIsOpen] = useState(true);
 
   return (
     <nav
+      id={TOC_ANCHOR_ID}
       aria-label="목차"
-      className="w-full rounded-[6px] border-2 border-ink bg-white px-5 py-4 md:max-w-[300px]"
+      className="w-full scroll-mt-20 rounded-[6px] border-2 border-ink bg-white px-5 py-4 md:max-w-[300px]"
     >
       <button
         type="button"

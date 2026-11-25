@@ -14,6 +14,7 @@ import { Infobox } from "@/components/wiki/Infobox";
 import { MemberNavbox } from "@/components/wiki/MemberNavbox";
 import { NotFoundDocument } from "@/components/wiki/NotFoundDocument";
 import { PixelAvatar } from "@/components/wiki/PixelAvatar";
+import { SectionNumberLink } from "@/components/wiki/SectionNumberLink";
 import {
   TableOfContents,
   type TocItem,
@@ -27,7 +28,6 @@ import { HOME_PATH, personPath } from "@/utils/wikiRoutes";
 import { ShareLinkButton } from "@/screens/room/components/ShareLinkButton";
 
 const HERO_AVATAR_LIMIT = 8;
-const FOOTNOTE_SECTION_ID = "w-footnotes";
 
 export function RoomScreen() {
   const generated = useWikiStore((state) => state.generated);
@@ -42,7 +42,6 @@ export function RoomScreen() {
       ? { label: note.link.label, anchorId: note.link.id }
       : undefined,
   }));
-  const footnoteNumber = String(wiki.sections.length + 1);
   const toc: TocItem[] = [
     ...wiki.sections.flatMap((section) => [
       { id: section.id, number: section.number, title: section.title },
@@ -55,7 +54,6 @@ export function RoomScreen() {
           title: sub.title,
         })),
     ]),
-    { id: FOOTNOTE_SECTION_ID, number: footnoteNumber, title: "각주" },
   ];
 
   return (
@@ -151,7 +149,7 @@ export function RoomScreen() {
               <div key={sub.id} id={sub.id} className="scroll-mt-20">
                 {sub.title && (
                   <h3 className="mb-3 text-xl font-bold text-ink">
-                    <span className="text-link">{sub.number}.</span>{" "}
+                    <SectionNumberLink number={sub.number} />{" "}
                     {sub.title}
                   </h3>
                 )}
@@ -162,17 +160,7 @@ export function RoomScreen() {
         </WikiSection>
       ))}
 
-      <WikiSection
-        id={FOOTNOTE_SECTION_ID}
-        number={footnoteNumber}
-        title="각주"
-      >
-        {notes.length ? (
-          <FootnoteList notes={notes} />
-        ) : (
-          <p className="text-subtle">각주가 없다.</p>
-        )}
-      </WikiSection>
+      {notes.length > 0 && <FootnoteList notes={notes} />}
     </FootnoteProvider>
   );
 }
