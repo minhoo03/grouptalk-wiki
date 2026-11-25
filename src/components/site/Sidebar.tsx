@@ -4,9 +4,9 @@ import { ChevronRightIcon, HistoryIcon, TrendingUpIcon } from "lucide-react";
 import Link from "next/link";
 
 import { WikiLink } from "@/components/wiki/WikiLink";
+import { useWikiRoutes } from "@/hooks/useWikiRoutes";
 import { useWikiStore } from "@/store/wikiStore";
 import { formatTime, truncate } from "@/utils/format";
-import { ROOM_PATH, personPath } from "@/utils/wikiRoutes";
 
 const PANEL_CLASS_NAME =
   "rounded-[6px] border-2 border-ink bg-white p-5 shadow-[4px_4px_0_0_#1E2A28]";
@@ -16,6 +16,7 @@ const RECENT_MESSAGE_PREVIEW_LENGTH = 40;
 
 export function Sidebar() {
   const room = useWikiStore((state) => state.generated?.room ?? null);
+  const routes = useWikiRoutes();
   const topWords = room?.topWords.slice(0, TOP_WORD_LIMIT) ?? [];
 
   return (
@@ -59,7 +60,7 @@ export function Sidebar() {
           </h2>
           {room && (
             <Link
-              href={ROOM_PATH}
+              href={routes.room}
               aria-label="단톡방 문서로"
               className="text-subtle hover:text-ink"
             >
@@ -73,7 +74,7 @@ export function Sidebar() {
               <li key={index} className="text-sm">
                 <div className="flex items-baseline justify-between gap-2">
                   <WikiLink
-                    href={personPath(message.author)}
+                    href={routes.person(message.author)}
                     className="text-[15px]"
                   >
                     {message.author}

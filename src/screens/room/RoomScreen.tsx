@@ -22,15 +22,17 @@ import {
 import { WikiLink } from "@/components/wiki/WikiLink";
 import { WikiNotice } from "@/components/wiki/WikiNotice";
 import { WikiSection } from "@/components/wiki/WikiSection";
+import { useWikiRoutes } from "@/hooks/useWikiRoutes";
 import { useWikiStore } from "@/store/wikiStore";
 import { formatDateKey, formatHour } from "@/utils/format";
-import { HOME_PATH, personPath } from "@/utils/wikiRoutes";
+import { HOME_PATH } from "@/utils/wikiRoutes";
 import { ShareLinkButton } from "@/screens/room/components/ShareLinkButton";
 
 const HERO_AVATAR_LIMIT = 8;
 
 export function RoomScreen() {
   const generated = useWikiStore((state) => state.generated);
+  const routes = useWikiRoutes();
 
   if (!generated) return <NotFoundDocument query="단톡방 문서" />;
 
@@ -87,7 +89,7 @@ export function RoomScreen() {
         {leader && (
           <WikiNotice kind="redirect">
             이 단톡방의 실세에 대한 내용은{" "}
-            <WikiLink href={personPath(leader.name)}>{leader.name}</WikiLink>{" "}
+            <WikiLink href={routes.person(leader.name)}>{leader.name}</WikiLink>{" "}
             문서를 참고하십시오.
           </WikiNotice>
         )}
